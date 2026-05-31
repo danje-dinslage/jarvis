@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   buildJarvisSystemPrompt,
+  buildOrientationPrompt,
   buildProjectStateUpdatePrompt,
   defaultProjectState,
   normalizeProjectState,
@@ -79,6 +80,8 @@ export async function POST(req: NextRequest) {
     const history: Message[] = Array.isArray(body?.history) ? body.history.slice(-8) : [];
     const project: ProjectState = normalizeProjectState(body?.project || {}, defaultProjectState);
 
+    const now = new Date().toISOString();
+
     const jarvisMessages = [
       ...history.map((m) => ({
         role: m.role,
@@ -98,7 +101,7 @@ export async function POST(req: NextRequest) {
         [
           {
             role: "user",
-            content: buildProjectStateUpdatePrompt(project, message, reply)
+            content: buildProjectStateUpdatePrompt(project, message, reply, now)
           }
         ],
         "You are a strict JSON updater. Return only valid JSON.",

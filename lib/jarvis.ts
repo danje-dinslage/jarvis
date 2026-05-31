@@ -7,6 +7,13 @@ export type ProjectState = {
   progress: number;
   risks: string[];
   decisions: string[];
+  // Project Clock — added v1.3
+  createdAt: string;
+  updatedAt: string;
+  lastRiskUpdate: string;
+  lastDecisionUpdate: string;
+  lastOrientationAt: string;
+  orientationCount: number;
 };
 
 export const defaultProjectState: ProjectState = {
@@ -17,7 +24,14 @@ export const defaultProjectState: ProjectState = {
   nextAction: "Start by telling Jarvis what you are building.",
   progress: 0,
   risks: [],
-  decisions: []
+  decisions: [],
+  // Project Clock — added v1.3
+  createdAt: "",
+  updatedAt: "",
+  lastRiskUpdate: "",
+  lastDecisionUpdate: "",
+  lastOrientationAt: "",
+  orientationCount: 0
 };
 
 export function buildJarvisSystemPrompt(project: ProjectState) {
@@ -38,6 +52,11 @@ Risks:
 ${project.risks.length ? project.risks.map((r) => `- ${r}`).join("\n") : "- None identified yet"}
 Decisions:
 ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") : "- None recorded yet"}
+Project clock:
+Created: ${project.createdAt || "Unknown"}
+Last updated: ${project.updatedAt || "Unknown"}
+Last risk update: ${project.lastRiskUpdate || "Unknown"}
+Last decision update: ${project.lastDecisionUpdate || "Unknown"}
 
 How you think:
 - Maintain awareness of mission, state, decisions, risks, open questions, and next action.
@@ -76,11 +95,46 @@ If the user asks for a handover, produce a concise handover with: Current State,
 Your goal: the user should feel they are working with Jarvis, not with Claude wearing a template.`;
 }
 
-export function buildProjectStateUpdatePrompt(project: ProjectState, userMessage: string, jarvisReply: string) {
+export function buildOrientationPrompt(project: ProjectState) {
+  return `RETURNING_USER_ORIENTATION
+
+You are orienting a founder who is returning to this project.
+Do not summarize. Orient.
+
+Current project state:
+Mission: ${project.mission}
+Status: ${project.status}
+Confidence: ${project.confidence}
+Progress: ${project.progress}%
+Risks:
+${project.risks.length ? project.risks.map((r) => `- ${r}`).join("\n") : "- None identified"}
+Decisions:
+${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") : "- None recorded"}
+Next action: ${project.nextAction}
+Project clock:
+Created: ${project.createdAt || "Unknown"}
+Last updated: ${project.updatedAt || "Unknown"}
+Last risk update: ${project.lastRiskUpdate || "Unknown"}
+Last decision update: ${project.lastDecisionUpdate || "Unknown"}
+
+Rules:
+- Elapsed time only matters when combined with an unresolved issue. 11 days + unresolved validation = important. 11 days + nothing blocking = say nothing about time.
+- Identify the single unresolved issue most likely to slow, derail, or waste effort on this project.
+- If nothing is blocking, say so plainly and suggest the clearest next move.
+- Give one concrete recommended action.
+- End with exactly one question: act on it now, or deliberately defer?
+
+Format: 3-5 sentences, then one question. No preamble. No lists. No headers.
+Be direct. Have a point of view.`;
+}
+
+export function buildProjectStateUpdatePrompt(project: ProjectState, userMessage: string, jarvisReply: string, now: string) {
   return `You update Jarvis project state after each conversation turn.
 
 Current project state:
 ${JSON.stringify(project, null, 2)}
+
+Current timestamp (ISO-8601 UTC): ${now}
 
 User message:
 ${userMessage}
@@ -89,6 +143,14 @@ Jarvis reply:
 ${jarvisReply}
 
 Update the project state whenever the user provides enough information to initialize or refine the project. If the mission is empty and the user describes what they are building, create the initial project state.
+
+Timestamp rules:
+- If createdAt is empty and the mission is being initialized for the first time, set createdAt to the current timestamp. Otherwise preserve the existing createdAt.
+- Always set updatedAt to the current timestamp.
+- If the risks array changed, set lastRiskUpdate to the current timestamp. Otherwise preserve existing value.
+- If the decisions array changed, set lastDecisionUpdate to the current timestamp. Otherwise preserve existing value.
+- Never fabricate timestamps. Use only the provided current timestamp.
+- Preserve lastOrientationAt and orientationCount unchanged — those are managed by the client.
 
 Use calibrated trust:
 - User statements may update state as user-reported information.
@@ -121,7 +183,13 @@ Return ONLY valid JSON with exactly this shape:
   "nextAction": "string",
   "progress": 0,
   "risks": ["string"],
-  "decisions": ["string"]
+  "decisions": ["string"],
+  "createdAt": "string",
+  "updatedAt": "string",
+  "lastRiskUpdate": "string",
+  "lastDecisionUpdate": "string",
+  "lastOrientationAt": "string",
+  "orientationCount": 0
 }`;
 }
 
@@ -134,14 +202,24 @@ export function normalizeProjectState(input: any, fallback: ProjectState): Proje
       .slice(0, 5);
   };
 
+  const cleanString = (value: unknown, fallbackValue: string) =>
+    typeof value === "string" && value.trim() ? value.trim() : fallbackValue;
+
   return {
-    mission: typeof input?.mission === "string" && input.mission.trim() ? input.mission.trim() : fallback.mission,
-    status: typeof input?.status === "string" && input.status.trim() ? input.status.trim() : fallback.status,
-    confidence: typeof input?.confidence === "string" && input.confidence.trim() ? input.confidence.trim() : fallback.confidence,
-    approval: typeof input?.approval === "string" && input.approval.trim() ? input.approval.trim() : fallback.approval,
-    nextAction: typeof input?.nextAction === "string" && input.nextAction.trim() ? input.nextAction.trim() : fallback.nextAction,
+    mission: cleanString(input?.mission, fallback.mission),
+    status: cleanString(input?.status, fallback.status),
+    confidence: cleanString(input?.confidence, fallback.confidence),
+    approval: cleanString(input?.approval, fallback.approval),
+    nextAction: cleanString(input?.nextAction, fallback.nextAction),
     progress: typeof input?.progress === "number" && Number.isFinite(input.progress) ? Math.max(0, Math.min(100, Math.round(input.progress))) : fallback.progress,
     risks: cleanArray(input?.risks, fallback.risks),
-    decisions: cleanArray(input?.decisions, fallback.decisions)
+    decisions: cleanArray(input?.decisions, fallback.decisions),
+    // Project Clock — added v1.3
+    createdAt: cleanString(input?.createdAt, fallback.createdAt),
+    updatedAt: cleanString(input?.updatedAt, fallback.updatedAt),
+    lastRiskUpdate: cleanString(input?.lastRiskUpdate, fallback.lastRiskUpdate),
+    lastDecisionUpdate: cleanString(input?.lastDecisionUpdate, fallback.lastDecisionUpdate),
+    lastOrientationAt: cleanString(input?.lastOrientationAt, fallback.lastOrientationAt),
+    orientationCount: typeof input?.orientationCount === "number" && Number.isFinite(input.orientationCount) ? Math.max(0, Math.round(input.orientationCount)) : fallback.orientationCount
   };
 }
