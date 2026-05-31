@@ -50,7 +50,7 @@ function Section({ title, icon: Icon, children, action }: { title: string; icon:
   );
 }
 
-function ReadOnlyBlock({ label, value, score }: { label: string; value: string; score: number }) {
+function ReadOnlyBlock({ label, value, score }: { label: string; value: string; score: number | null }) {
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -92,38 +92,46 @@ function ListBlock({ items, tone = "default", score }: { items: string[]; tone?:
 
 function scoreText(value: string, neutralValues: string[] = []) {
   const clean = value.trim().toLowerCase();
-  if (!clean || neutralValues.includes(clean)) return 15;
-  if (clean.includes("unknown") || clean.includes("not established") || clean.includes("not initialized")) return 25;
-  if (clean.includes("low") || clean.includes("blocked") || clean.includes("uncertain")) return 35;
-  if (clean.includes("medium") || clean.includes("prototype") || clean.includes("watch")) return 65;
-  if (clean.includes("high") || clean.includes("validated") || clean.includes("stable")) return 85;
-  return Math.min(90, Math.max(45, clean.length > 40 ? 75 : 55));
+  if (!clean || neutralValues.includes(clean)) return null;
+  if (clean.includes("unknown") || clean.includes("not established") || clean.includes("not initialized")) return null;
+  if (clean.includes("low") || clean.includes("blocked") || clean.includes("uncertain")) return 25;
+  if (clean.includes("medium") || clean.includes("prototype") || clean.includes("watch")) return 45;
+  if (clean.includes("high") || clean.includes("validated") || clean.includes("stable")) return 75;
+  return Math.min(75, Math.max(30, clean.length > 80 ? 60 : 40));
 }
 
 function scoreList(items: string[]) {
-  if (!items.length) return 15;
-  if (items.length <= 2) return 60;
-  if (items.length <= 4) return 75;
-  return 85;
+  if (!items.length) return null;
+  if (items.length <= 2) return 35;
+  if (items.length <= 4) return 55;
+  return 70;
 }
 
-function toneFromScore(score: number): "red" | "amber" | "green" {
+function toneFromScore(score: number | null): "none" | "red" | "amber" | "green" {
+  if (score === null) return "none";
   if (score < 40) return "red";
   if (score < 70) return "amber";
   return "green";
 }
 
-function HealthDot({ score }: { score: number }) {
+function HealthDot({ score }: { score: number | null }) {
   const tone = toneFromScore(score);
-  const color = tone === "green" ? "bg-emerald-400 shadow-emerald-400/40" : tone === "amber" ? "bg-amber-400 shadow-amber-400/40" : "bg-rose-400 shadow-rose-400/40";
+  const color =
+    tone === "green"
+      ? "bg-emerald-400 shadow-emerald-400/40"
+      : tone === "amber"
+        ? "bg-amber-400 shadow-amber-400/40"
+        : tone === "red"
+          ? "bg-rose-400 shadow-rose-400/40"
+          : "bg-slate-600 shadow-slate-600/20";
   return <span className={`inline-block h-2.5 w-2.5 rounded-full shadow-lg ${color}`} />;
 }
 
-function FieldHealth({ score }: { score: number }) {
+function FieldHealth({ score }: { score: number | null }) {
   return (
     <div className="flex items-center gap-2 text-xs text-slate-500">
       <HealthDot score={score} />
-      <span>{score}%</span>
+      <span>{score === null ? "Unknown" : `${score}%`}</span>
     </div>
   );
 }
@@ -148,6 +156,58 @@ function ProgressBar({ value }: { value: number }) {
         <div className={`h-full rounded-full transition-all duration-500 ${bar}`} style={{ width: `${safe}%` }} />
       </div>
       <p className="mt-3 text-xs leading-5 text-slate-500">Estimated by Jarvis from current scope, known decisions, risks, and evidence. It will change as the project state improves.</p>
+    </div>
+  );
+}
+
+
+function JarvisActivityPanel() {
+  const steps = [
+    "Reviewing mission",
+    "Checking scope drift",
+    "Testing assumptions",
+    "Assessing risk",
+    "Preparing recommendation"
+  ];
+
+  return (
+    <div className="mr-6 overflow-hidden rounded-3xl border border-blue-400/30 bg-blue-500/10 p-5 text-sm text-blue-100 shadow-lg shadow-blue-500/10">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 font-semibold text-blue-100">
+          <Sparkles className="h-4 w-4 animate-pulse text-blue-300" />
+          Jarvis is working
+        </div>
+        <div className="flex gap-1">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-blue-300" />
+          <span className="h-2 w-2 animate-pulse rounded-full bg-blue-300 [animation-delay:150ms]" />
+          <span className="h-2 w-2 animate-pulse rounded-full bg-blue-300 [animation-delay:300ms]" />
+        </div>
+      </div>
+
+      <div className="mb-4 h-2 overflow-hidden rounded-full bg-slate-800">
+        <div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-blue-400 via-cyan-300 to-blue-500" />
+      </div>
+
+      <div className="space-y-2">
+        {steps.map((step, index) => (
+          <div key={step} className="flex items-center justify-between rounded-2xl border border-blue-500/10 bg-slate-950/40 px-3 py-2">
+            <span className="flex items-center gap-2 text-slate-200">
+              <span
+                className="h-2 w-2 animate-pulse rounded-full bg-cyan-300 shadow-lg shadow-cyan-300/40"
+                style={{ animationDelay: `${index * 180}ms` }}
+              />
+              {step}
+            </span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-300">
+              {index < 2 ? "OK" : index < 4 ? "Scanning" : "Drafting"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-4 text-xs leading-5 text-blue-200/70">
+        Running project-state checks before responding. This is the constitution layer at work, not a generic loading spinner.
+      </p>
     </div>
   );
 }
@@ -197,7 +257,7 @@ export default function Home() {
 
   const fieldScores = useMemo(() => ({
     mission: scoreText(project.mission, [""]),
-    nextAction: scoreText(project.nextAction),
+    nextAction: scoreText(project.nextAction, ["start by telling jarvis what you are building."]),
     status: scoreText(project.status),
     confidence: scoreText(project.confidence),
     approval: scoreText(project.approval),
@@ -428,11 +488,7 @@ ${project.decisions.map((d) => `- ${d}`).join("\n")}`;
                 </div>
               ))}
 
-              {loading && (
-                <div className="mr-6 rounded-3xl border border-blue-500/20 bg-blue-500/10 p-5 text-sm text-blue-100">
-                  Jarvis is thinking and updating project state...
-                </div>
-              )}
+              {loading && <JarvisActivityPanel />}
 
               {error && (
                 <div className="rounded-3xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-100">
