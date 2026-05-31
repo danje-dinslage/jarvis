@@ -57,14 +57,15 @@ export default function Home() {
   const [project, setProject] = useState<ProjectState>(defaultProjectState);
   const [message, setMessage] = useState("");
   const [history, setHistory] = useState<Message[]>([
-    {
-      role: "assistant",
-      content: "Good. The browser prototype is live.
+  {
+    role: "assistant",
+    content: `Good. The browser prototype is live.
 
 Current focus: prove Jarvis feels like a project companion, not Claude with a dashboard.
 
-Best next move: test me with scope drift, uncertainty, and project-direction questions."
-    }
+Best next move: test me with scope drift, uncertainty, and project-direction questions.`
+  }
+]);
   ]);
   const [betaPassword, setBetaPassword] = useState("");
   const [loading, setLoading] = useState(false);
