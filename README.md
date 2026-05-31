@@ -79,3 +79,10 @@ Expected behavior:
 - stronger pushback when useful
 - fewer visible governance labels
 - still state-aware, scope-aware, and risk-aware
+
+## v0.3.0 — Auto State Update
+
+- Jarvis now updates Mission, Status, Confidence, Approval, Next Action, Risks, and Decisions from conversation turns.
+- Side panels are read-only by default.
+- Manual correction is available through Edit mode.
+- New Session clears chat history but keeps project state.

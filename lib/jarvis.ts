@@ -9,20 +9,20 @@ export type ProjectState = {
 };
 
 export const defaultProjectState: ProjectState = {
-  mission: "Build Jarvis: a constitution-governed AI project navigator that keeps work on course.",
-  status: "Prototype",
+  mission: "Validate Jarvis: a constitution-governed AI project companion that keeps work on course.",
+  status: "Prototype live",
   confidence: "Medium",
-  approval: "Prototype Only",
-  nextAction: "Test whether Jarvis feels safer and more useful than a raw Claude chat.",
+  approval: "Prototype testing",
+  nextAction: "Use real conversations to test whether Jarvis feels like a trusted project companion rather than Claude with a dashboard.",
   risks: [
-    "Jarvis may feel like a generic chatbot if the constitution is not visible in behavior.",
-    "Too much governance language may feel bureaucratic.",
-    "A local/dev workflow is not acceptable; this needs to be a hosted browser experience."
+    "Jarvis may feel like a generic chatbot if project state is not reflected in behavior.",
+    "Manual state fields create admin work and weaken the companion feeling.",
+    "The product may become a dashboard instead of an active chief of staff."
   ],
   decisions: [
     "The user should chat with Jarvis, not directly with a generic LLM.",
     "The constitution is the operating system, not the product users see.",
-    "The MVP must run from a hosted browser URL."
+    "Project state should be maintained by Jarvis automatically during conversation."
   ]
 };
 
@@ -72,4 +72,55 @@ If the user greets you, do not give a generic greeting. Briefly orient them to t
 If the user asks for a handover, produce a concise handover with: Current State, Key Decisions, Open Risks, Next Step.
 
 Your goal: the user should feel they are working with Jarvis, not with Claude wearing a template.`;
+}
+
+export function buildProjectStateUpdatePrompt(project: ProjectState, userMessage: string, jarvisReply: string) {
+  return `You update Jarvis project state after each conversation turn.
+
+Current project state:
+${JSON.stringify(project, null, 2)}
+
+User message:
+${userMessage}
+
+Jarvis reply:
+${jarvisReply}
+
+Update the project state only when the conversation gives new or clearer information.
+Do not invent facts.
+Do not add generic risks or decisions.
+Preserve useful existing risks and decisions unless clearly obsolete.
+Keep arrays concise: maximum 5 risks and maximum 5 decisions.
+Use short, plain language.
+
+Return ONLY valid JSON with exactly this shape:
+{
+  "mission": "string",
+  "status": "string",
+  "confidence": "string",
+  "approval": "string",
+  "nextAction": "string",
+  "risks": ["string"],
+  "decisions": ["string"]
+}`;
+}
+
+export function normalizeProjectState(input: any, fallback: ProjectState): ProjectState {
+  const cleanArray = (value: unknown, fallbackValue: string[]) => {
+    if (!Array.isArray(value)) return fallbackValue;
+    return value
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .slice(0, 5);
+  };
+
+  return {
+    mission: typeof input?.mission === "string" && input.mission.trim() ? input.mission.trim() : fallback.mission,
+    status: typeof input?.status === "string" && input.status.trim() ? input.status.trim() : fallback.status,
+    confidence: typeof input?.confidence === "string" && input.confidence.trim() ? input.confidence.trim() : fallback.confidence,
+    approval: typeof input?.approval === "string" && input.approval.trim() ? input.approval.trim() : fallback.approval,
+    nextAction: typeof input?.nextAction === "string" && input.nextAction.trim() ? input.nextAction.trim() : fallback.nextAction,
+    risks: cleanArray(input?.risks, fallback.risks),
+    decisions: cleanArray(input?.decisions, fallback.decisions)
+  };
 }

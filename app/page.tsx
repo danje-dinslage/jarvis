@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Brain, CheckCircle2, Clipboard, Compass, Lock, RefreshCcw, Send, ShieldCheck, Sparkles, Target } from "lucide-react";
+import { AlertTriangle, Brain, CheckCircle2, Clipboard, Compass, Edit3, Lock, RefreshCcw, Save, Send, ShieldCheck, Sparkles, Target } from "lucide-react";
 import { defaultProjectState, type ProjectState } from "@/lib/jarvis";
 
 type Message = {
@@ -13,9 +13,7 @@ const initialAssistantMessage: Message = {
   role: "assistant",
   content: `Good. New session started.
 
-Current focus: prove Jarvis feels like a project companion, not Claude with a dashboard.
-
-Best next move: test me with scope drift, uncertainty, and project-direction questions.`
+Tell me what we are working on, or ask what we should do next. I will keep the project state updated from the conversation so you do not have to maintain the side panels manually.`
 };
 
 const starters = [
@@ -37,15 +35,27 @@ function Pill({ children, tone = "default" }: { children: React.ReactNode; tone?
   return <span className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium ${styles}`}>{children}</span>;
 }
 
-function Section({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) {
+function Section({ title, icon: Icon, children, action }: { title: string; icon: any; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <section className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5 shadow-2xl shadow-black/20">
-      <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-100">
-        <Icon className="h-4 w-4 text-blue-300" />
-        {title}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+          <Icon className="h-4 w-4 text-blue-300" />
+          {title}
+        </div>
+        {action}
       </div>
       {children}
     </section>
+  );
+}
+
+function ReadOnlyBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{value || "—"}</div>
+    </div>
   );
 }
 
@@ -63,30 +73,50 @@ function TextField({ label, value, onChange, rows = 3 }: { label: string; value:
   );
 }
 
+function ListBlock({ items, tone = "default" }: { items: string[]; tone?: "amber" | "green" | "default" }) {
+  const color = tone === "amber" ? "border-amber-500/20 bg-amber-500/10 text-amber-100" : tone === "green" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100" : "border-slate-800 bg-slate-900/60 text-slate-100";
+  if (!items.length) return <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-500">Nothing recorded yet. Jarvis will populate this from the conversation.</div>;
+  return (
+    <div className="space-y-2">
+      {items.map((item, index) => (
+        <div key={`${item}-${index}`} className={`rounded-2xl border p-3 text-sm leading-6 ${color}`}>{item}</div>
+      ))}
+    </div>
+  );
+}
+
 export default function Home() {
   const [project, setProject] = useState<ProjectState>(defaultProjectState);
+  const [draftProject, setDraftProject] = useState<ProjectState>(defaultProjectState);
+  const [editMode, setEditMode] = useState(false);
   const [message, setMessage] = useState("");
   const [history, setHistory] = useState<Message[]>([initialAssistantMessage]);
   const [betaPassword, setBetaPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [lastStateUpdate, setLastStateUpdate] = useState("Not yet updated this session");
 
   useEffect(() => {
-    const saved = localStorage.getItem("jarvis-project-state-v02");
-    const savedHistory = localStorage.getItem("jarvis-history-v02");
+    const saved = localStorage.getItem("jarvis-project-state-v03");
+    const savedHistory = localStorage.getItem("jarvis-history-v03");
     const savedPassword = localStorage.getItem("jarvis-beta-password-v02");
 
-    if (saved) setProject(JSON.parse(saved));
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      setProject(parsed);
+      setDraftProject(parsed);
+    }
     if (savedHistory) setHistory(JSON.parse(savedHistory));
     if (savedPassword) setBetaPassword(savedPassword);
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("jarvis-project-state-v02", JSON.stringify(project));
+    localStorage.setItem("jarvis-project-state-v03", JSON.stringify(project));
+    setDraftProject(project);
   }, [project]);
 
   useEffect(() => {
-    localStorage.setItem("jarvis-history-v02", JSON.stringify(history));
+    localStorage.setItem("jarvis-history-v03", JSON.stringify(history));
   }, [history]);
 
   useEffect(() => {
@@ -99,8 +129,8 @@ export default function Home() {
     return { label: "Stable", tone: "green" as const };
   }, [project]);
 
-  function updateArrayField(field: "risks" | "decisions", text: string) {
-    setProject((p) => ({
+  function updateDraftArrayField(field: "risks" | "decisions", text: string) {
+    setDraftProject((p) => ({
       ...p,
       [field]: text
         .split("\n")
@@ -109,11 +139,22 @@ export default function Home() {
     }));
   }
 
+  function saveManualState() {
+    setProject(draftProject);
+    setEditMode(false);
+    setLastStateUpdate("Manually corrected");
+  }
+
+  function cancelManualState() {
+    setDraftProject(project);
+    setEditMode(false);
+  }
+
   function newSession() {
     setHistory([initialAssistantMessage]);
     setMessage("");
     setError("");
-    localStorage.removeItem("jarvis-history-v02");
+    localStorage.removeItem("jarvis-history-v03");
   }
 
   async function send(custom?: string) {
@@ -143,6 +184,10 @@ export default function Home() {
       if (!response.ok) throw new Error(data.error || "Request failed");
 
       setHistory((h) => [...h, { role: "assistant", content: data.reply }]);
+      if (data.project) {
+        setProject(data.project);
+        setLastStateUpdate("Updated by Jarvis from the conversation");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -195,9 +240,7 @@ ${project.decisions.map((d) => `- ${d}`).join("\n")}`;
               <RefreshCcw className="h-3.5 w-3.5" />
               New Session
             </button>
-            <Pill tone="green">
-              <ShieldCheck className="h-3.5 w-3.5" /> Jarvis Layer Active
-            </Pill>
+            <Pill tone="green"><ShieldCheck className="h-3.5 w-3.5" /> Jarvis Layer Active</Pill>
             <Pill tone={projectHealth.tone}>{projectHealth.label}</Pill>
             <Pill tone="blue">Claude Powered</Pill>
           </div>
@@ -205,22 +248,45 @@ ${project.decisions.map((d) => `- ${d}`).join("\n")}`;
 
         <div className="grid grid-cols-12 gap-5">
           <aside className="col-span-12 space-y-5 lg:col-span-3">
-            <Section title="Mission State" icon={Target}>
-              <div className="space-y-4">
-                <TextField label="Mission" value={project.mission} onChange={(v) => setProject((p) => ({ ...p, mission: v }))} rows={4} />
-                <TextField label="Next Action" value={project.nextAction} onChange={(v) => setProject((p) => ({ ...p, nextAction: v }))} rows={3} />
-
-                <div className="grid grid-cols-2 gap-3">
-                  <TextField label="Status" value={project.status} onChange={(v) => setProject((p) => ({ ...p, status: v }))} rows={1} />
-                  <TextField label="Confidence" value={project.confidence} onChange={(v) => setProject((p) => ({ ...p, confidence: v }))} rows={1} />
+            <Section
+              title="Mission State"
+              icon={Target}
+              action={
+                editMode ? (
+                  <div className="flex gap-2">
+                    <button onClick={saveManualState} className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200"><Save className="mr-1 inline h-3 w-3" />Save</button>
+                    <button onClick={cancelManualState} className="rounded-full border border-slate-700 px-3 py-1 text-xs font-medium text-slate-300">Cancel</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setEditMode(true)} className="rounded-full border border-slate-700 px-3 py-1 text-xs font-medium text-slate-300 hover:border-blue-400 hover:text-blue-200"><Edit3 className="mr-1 inline h-3 w-3" />Edit</button>
+                )
+              }
+            >
+              {editMode ? (
+                <div className="space-y-4">
+                  <TextField label="Mission" value={draftProject.mission} onChange={(v) => setDraftProject((p) => ({ ...p, mission: v }))} rows={4} />
+                  <TextField label="Next Action" value={draftProject.nextAction} onChange={(v) => setDraftProject((p) => ({ ...p, nextAction: v }))} rows={3} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <TextField label="Status" value={draftProject.status} onChange={(v) => setDraftProject((p) => ({ ...p, status: v }))} rows={1} />
+                    <TextField label="Confidence" value={draftProject.confidence} onChange={(v) => setDraftProject((p) => ({ ...p, confidence: v }))} rows={1} />
+                  </div>
+                  <TextField label="Approval" value={draftProject.approval} onChange={(v) => setDraftProject((p) => ({ ...p, approval: v }))} rows={1} />
                 </div>
-
-                <TextField label="Approval" value={project.approval} onChange={(v) => setProject((p) => ({ ...p, approval: v }))} rows={1} />
-
-                <button onClick={copyState} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-slate-900">
-                  <Clipboard className="h-4 w-4" /> Copy State
-                </button>
-              </div>
+              ) : (
+                <div className="space-y-3">
+                  <ReadOnlyBlock label="Mission" value={project.mission} />
+                  <ReadOnlyBlock label="Next Action" value={project.nextAction} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <ReadOnlyBlock label="Status" value={project.status} />
+                    <ReadOnlyBlock label="Confidence" value={project.confidence} />
+                  </div>
+                  <ReadOnlyBlock label="Approval" value={project.approval} />
+                  <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-3 text-xs leading-5 text-blue-100">{lastStateUpdate}</div>
+                  <button onClick={copyState} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-slate-900">
+                    <Clipboard className="h-4 w-4" /> Copy State
+                  </button>
+                </div>
+              )}
             </Section>
           </aside>
 
@@ -229,7 +295,7 @@ ${project.decisions.map((d) => `- ${d}`).join("\n")}`;
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-bold">Chat with Jarvis</h2>
-                  <p className="mt-1 text-sm text-slate-400">Jarvis answers through mission, risk, decisions, and scope.</p>
+                  <p className="mt-1 text-sm text-slate-400">Talk naturally. Jarvis updates the project state automatically.</p>
                 </div>
 
                 <div className="hidden items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-400 sm:flex">
@@ -260,7 +326,7 @@ ${project.decisions.map((d) => `- ${d}`).join("\n")}`;
 
               {loading && (
                 <div className="mr-6 rounded-3xl border border-blue-500/20 bg-blue-500/10 p-5 text-sm text-blue-100">
-                  Jarvis is checking mission, scope, risk, and evidence...
+                  Jarvis is thinking and updating project state...
                 </div>
               )}
 
@@ -277,7 +343,7 @@ ${project.decisions.map((d) => `- ${d}`).join("\n")}`;
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && send()}
-                  placeholder="Tell Jarvis what you want to do..."
+                  placeholder="Tell Jarvis what you are working on..."
                   className="flex-1 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-blue-400"
                 />
 
@@ -298,44 +364,37 @@ ${project.decisions.map((d) => `- ${d}`).join("\n")}`;
           <aside className="col-span-12 space-y-5 lg:col-span-3">
             <Section title="Navigation Signals" icon={ShieldCheck}>
               <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Scope Drift</span>
-                  <Pill tone="green">Checked</Pill>
-                </div>
-
-                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Approval State</span>
-                  <Pill tone="amber">{project.approval}</Pill>
-                </div>
-
-                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Project Health</span>
-                  <Pill tone={projectHealth.tone}>{projectHealth.label}</Pill>
-                </div>
-
-                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Known Risks</span>
-                  <Pill tone="amber">{project.risks.length}</Pill>
-                </div>
+                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3"><span className="text-slate-400">Scope Drift</span><Pill tone="green">Checked</Pill></div>
+                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3"><span className="text-slate-400">Approval State</span><Pill tone="amber">{project.approval}</Pill></div>
+                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3"><span className="text-slate-400">Project Health</span><Pill tone={projectHealth.tone}>{projectHealth.label}</Pill></div>
+                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3"><span className="text-slate-400">Known Risks</span><Pill tone="amber">{project.risks.length}</Pill></div>
               </div>
             </Section>
 
             <Section title="Risks" icon={AlertTriangle}>
-              <textarea
-                value={project.risks.join("\n")}
-                onChange={(e) => updateArrayField("risks", e.target.value)}
-                rows={8}
-                className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm leading-6 text-amber-100 outline-none focus:border-amber-400"
-              />
+              {editMode ? (
+                <textarea
+                  value={draftProject.risks.join("\n")}
+                  onChange={(e) => updateDraftArrayField("risks", e.target.value)}
+                  rows={8}
+                  className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm leading-6 text-amber-100 outline-none focus:border-amber-400"
+                />
+              ) : (
+                <ListBlock items={project.risks} tone="amber" />
+              )}
             </Section>
 
             <Section title="Decisions" icon={CheckCircle2}>
-              <textarea
-                value={project.decisions.join("\n")}
-                onChange={(e) => updateArrayField("decisions", e.target.value)}
-                rows={8}
-                className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm leading-6 text-emerald-100 outline-none focus:border-emerald-400"
-              />
+              {editMode ? (
+                <textarea
+                  value={draftProject.decisions.join("\n")}
+                  onChange={(e) => updateDraftArrayField("decisions", e.target.value)}
+                  rows={8}
+                  className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm leading-6 text-emerald-100 outline-none focus:border-emerald-400"
+                />
+              ) : (
+                <ListBlock items={project.decisions} tone="green" />
+              )}
             </Section>
           </aside>
         </div>
