@@ -295,6 +295,59 @@ function JarvisActivityPanel({ intent }: { intent: ActivityIntent }) {
   );
 }
 
+// ReadOnlyBlock — displays a single labelled field with state indicator
+function ReadOnlyBlock({ label, value, state }: { label: string; value: string; state: FieldState }) {
+  const isEmpty = !value || value.trim().length === 0;
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+        <FieldStateBadge state={state} />
+      </div>
+      <p className={`text-sm leading-6 ${isEmpty ? "text-slate-600 italic" : "text-slate-200"}`}>
+        {isEmpty ? "Not defined" : value}
+      </p>
+    </div>
+  );
+}
+
+// ListBlock — displays a list of strings (risks or decisions) with state indicator
+function ListBlock({
+  items,
+  tone,
+  state,
+  emptyText
+}: {
+  items: string[];
+  tone: "amber" | "green";
+  state: FieldState;
+  emptyText: string;
+}) {
+  const textColor = tone === "amber" ? "text-amber-100" : "text-emerald-100";
+  const dotColor = tone === "amber" ? "bg-amber-400" : "bg-emerald-400";
+
+  if (!items.length) {
+    return (
+      <div className="space-y-2">
+        <FieldStateBadge state={state} />
+        <p className="text-xs leading-5 text-slate-500">{emptyText}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <FieldStateBadge state={state} />
+      {items.map((item, i) => (
+        <div key={i} className="flex items-start gap-2 rounded-2xl bg-slate-900 px-3 py-2">
+          <span className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
+          <span className={`text-sm leading-6 ${textColor}`}>{item}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Home() {
   const [project, setProject] = useState<ProjectState>(defaultProjectState);
   const [draftProject, setDraftProject] = useState<ProjectState>(defaultProjectState);
