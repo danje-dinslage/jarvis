@@ -148,96 +148,54 @@ function Section({ title, icon: Icon, children, action }: { title: string; icon:
   );
 }
 
-function scoreText(value: string, neutralValues: string[] = []) {
+type FieldState = "Unknown" | "Initial" | "Partial" | "Defined" | "Validated";
+
+function fieldStateFromText(value: string, neutralValues: string[] = []): FieldState {
   const clean = value.trim().toLowerCase();
-  if (!clean || neutralValues.includes(clean)) return null;
-  if (clean.includes("unknown") || clean.includes("not established") || clean.includes("not initialized")) return null;
-  if (clean.includes("low") || clean.includes("blocked") || clean.includes("uncertain")) return 25;
-  if (clean.includes("medium") || clean.includes("prototype") || clean.includes("watch")) return 45;
-  if (clean.includes("high") || clean.includes("validated") || clean.includes("stable")) return 75;
-  return Math.min(75, Math.max(30, clean.length > 80 ? 60 : 40));
+  if (!clean || neutralValues.includes(clean)) return "Unknown";
+  if (clean.includes("unknown") || clean.includes("not established") || clean.includes("not initialized")) return "Unknown";
+  if (clean.includes("low") || clean.includes("uncertain") || clean.includes("needs verification") || clean.includes("unverified")) return "Initial";
+  if (clean.includes("medium") || clean.includes("prototype") || clean.includes("watch") || clean.includes("reported")) return "Partial";
+  if (clean.includes("validated") || clean.includes("verified")) return "Validated";
+  if (clean.length > 20) return "Defined";
+  return "Initial";
 }
 
-function scoreList(items: string[]) {
-  if (!items.length) return null;
-  if (items.length <= 2) return 35;
-  if (items.length <= 4) return 55;
-  return 70;
+function fieldStateFromList(items: string[]): FieldState {
+  if (!items.length) return "Unknown";
+  if (items.length <= 2) return "Partial";
+  return "Defined";
 }
 
-function toneFromScore(score: number | null): "none" | "red" | "amber" | "green" {
-  if (score === null) return "none";
-  if (score < 40) return "red";
-  if (score < 70) return "amber";
-  return "green";
+function toneFromState(state: FieldState): "default" | "red" | "amber" | "green" | "blue" {
+  if (state === "Unknown") return "default";
+  if (state === "Initial") return "red";
+  if (state === "Partial") return "amber";
+  if (state === "Defined") return "green";
+  return "blue";
 }
 
-function HealthDot({ score }: { score: number | null }) {
-  const tone = toneFromScore(score);
+function StateDot({ state }: { state: FieldState }) {
+  const tone = toneFromState(state);
   const color =
-    tone === "green"
-      ? "bg-emerald-400 shadow-emerald-400/40"
-      : tone === "amber"
-        ? "bg-amber-400 shadow-amber-400/40"
-        : tone === "red"
-          ? "bg-rose-400 shadow-rose-400/40"
-          : "bg-slate-600 shadow-slate-600/20";
+    tone === "blue"
+      ? "bg-blue-400 shadow-blue-400/40"
+      : tone === "green"
+        ? "bg-emerald-400 shadow-emerald-400/40"
+        : tone === "amber"
+          ? "bg-amber-400 shadow-amber-400/40"
+          : tone === "red"
+            ? "bg-rose-400 shadow-rose-400/40"
+            : "bg-slate-600 shadow-slate-600/20";
 
   return <span className={`inline-block h-2.5 w-2.5 rounded-full shadow-lg ${color}`} />;
 }
 
-function FieldHealth({ score }: { score: number | null }) {
+function FieldStateBadge({ state }: { state: FieldState }) {
   return (
     <div className="flex items-center gap-2 text-xs text-slate-500">
-      <HealthDot score={score} />
-      <span>{score === null ? "Unknown" : `${score}%`}</span>
-    </div>
-  );
-}
-
-function ReadOnlyBlock({ label, value, score }: { label: string; value: string; score: number | null }) {
-  return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
-        <FieldHealth score={score} />
-      </div>
-      <div className="whitespace-pre-wrap text-sm leading-6 text-slate-100">
-        {value || "Not initialized yet. Jarvis will fill this from the conversation."}
-      </div>
-    </div>
-  );
-}
-
-function ListBlock({ items, tone = "default", score, emptyText }: { items: string[]; tone?: "amber" | "green" | "default"; score: number | null; emptyText?: string }) {
-  const color =
-    tone === "amber"
-      ? "border-amber-500/20 bg-amber-500/10 text-amber-100"
-      : tone === "green"
-        ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100"
-        : "border-slate-800 bg-slate-900/60 text-slate-100";
-
-  if (!items.length) {
-    return (
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 text-sm leading-6 text-slate-500">
-        <div className="mb-2 flex justify-end">
-          <FieldHealth score={score} />
-        </div>
-        {emptyText || "Nothing recorded yet. Jarvis will populate this from the conversation."}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="flex justify-end">
-        <FieldHealth score={score} />
-      </div>
-      {items.map((item, index) => (
-        <div key={`${item}-${index}`} className={`rounded-2xl border p-3 text-sm leading-6 ${color}`}>
-          {item}
-        </div>
-      ))}
+      <StateDot state={state} />
+      <span>{state}</span>
     </div>
   );
 }
@@ -258,8 +216,8 @@ function TextField({ label, value, onChange, rows = 3 }: { label: string; value:
 
 function ProgressBar({ value }: { value: number }) {
   const safe = Math.max(0, Math.min(100, Math.round(value || 0)));
-  const tone = toneFromScore(safe);
-  const bar = tone === "green" ? "bg-emerald-400" : tone === "amber" ? "bg-amber-400" : "bg-rose-400";
+  const tone = safe === 0 ? "default" : safe < 20 ? "red" : safe < 60 ? "amber" : "green";
+  const bar = tone === "green" ? "bg-emerald-400" : tone === "amber" ? "bg-amber-400" : tone === "red" ? "bg-rose-400" : "bg-slate-700";
 
   return (
     <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5 shadow-2xl shadow-black/20">
@@ -269,7 +227,7 @@ function ProgressBar({ value }: { value: number }) {
           Project Progress
         </div>
         <div className="flex items-center gap-2 text-sm font-bold text-slate-100">
-          <HealthDot score={safe} />
+          <StateDot state={safe === 0 ? "Unknown" : safe < 20 ? "Initial" : safe < 60 ? "Partial" : safe < 85 ? "Defined" : "Validated"} />
           {safe}%
         </div>
       </div>
@@ -300,7 +258,7 @@ function JarvisActivityPanel({ intent }: { intent: ActivityIntent }) {
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 font-semibold text-blue-100">
           <Sparkles className="h-4 w-4 animate-pulse text-blue-300" />
-          Jarvis is working
+          Status
         </div>
         <div className="rounded-full border border-blue-400/20 bg-blue-400/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-blue-200">
           {intentLabel}
@@ -329,7 +287,7 @@ function JarvisActivityPanel({ intent }: { intent: ActivityIntent }) {
       </div>
 
       <p className="mt-4 text-xs leading-5 text-blue-200/70">
-        Showing high-level project checks. This is not hidden chain-of-thought; it is Jarvis' visible work plan for this request.
+        High-level project checks for this request. This is a visible status plan, not hidden reasoning.
       </p>
     </div>
   );
@@ -379,14 +337,14 @@ export default function Home() {
     chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: "smooth" });
   }, [history, loading, error]);
 
-  const fieldScores = useMemo(() => ({
-    mission: scoreText(project.mission),
-    nextAction: scoreText(project.nextAction, ["start by telling jarvis what you are building."]),
-    status: scoreText(project.status),
-    confidence: scoreText(project.confidence),
-    approval: scoreText(project.approval),
-    risks: scoreList(project.risks),
-    decisions: scoreList(project.decisions)
+  const fieldStates = useMemo(() => ({
+    mission: fieldStateFromText(project.mission),
+    nextAction: fieldStateFromText(project.nextAction, ["start by telling jarvis what you are building."]),
+    status: fieldStateFromText(project.status),
+    confidence: fieldStateFromText(project.confidence),
+    approval: fieldStateFromText(project.approval),
+    risks: fieldStateFromList(project.risks),
+    decisions: fieldStateFromList(project.decisions)
   }), [project]);
 
   const projectHealth = useMemo(() => {
@@ -573,11 +531,11 @@ ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") :
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <ReadOnlyBlock label="Mission" value={project.mission} score={fieldScores.mission} />
-                  <ReadOnlyBlock label="Next Action" value={project.nextAction} score={fieldScores.nextAction} />
-                  <ReadOnlyBlock label="Status" value={project.status} score={fieldScores.status} />
-                  <ReadOnlyBlock label="Confidence" value={project.confidence} score={fieldScores.confidence} />
-                  <ReadOnlyBlock label="Approval" value={project.approval} score={fieldScores.approval} />
+                  <ReadOnlyBlock label="Mission" value={project.mission} state={fieldStates.mission} />
+                  <ReadOnlyBlock label="Next Action" value={project.nextAction} state={fieldStates.nextAction} />
+                  <ReadOnlyBlock label="Status" value={project.status} state={fieldStates.status} />
+                  <ReadOnlyBlock label="Confidence" value={project.confidence} state={fieldStates.confidence} />
+                  <ReadOnlyBlock label="Approval" value={project.approval} state={fieldStates.approval} />
                   <button onClick={copyState} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-slate-900">
                     <Clipboard className="h-4 w-4" /> Copy State
                   </button>
@@ -655,26 +613,37 @@ ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") :
           </section>
 
           <aside className="col-span-12 space-y-5 lg:col-span-3">
-            <Section title="Navigation Signals" icon={ShieldCheck}>
+            <Section title="Status" icon={ShieldCheck}>
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Scope Drift</span>
-                  <Pill tone={project.progress === 0 ? "default" : "green"}>{project.progress === 0 ? "Unknown" : "Checked"}</Pill>
+                  <span className="text-slate-400">Stage</span>
+                  <Pill tone={project.progress === 0 ? "default" : project.progress < 20 ? "red" : project.progress < 60 ? "amber" : "green"}>
+                    {project.progress === 0 ? "Uninitialized" : project.status}
+                  </Pill>
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Approval State</span>
-                  <Pill tone={project.approval === "Not established" ? "default" : "amber"}>{project.approval}</Pill>
+                  <span className="text-slate-400">Scope</span>
+                  <Pill tone={project.progress === 0 ? "default" : history.length < 5 ? "amber" : "green"}>
+                    {project.progress === 0 ? "Unknown" : history.length < 5 ? "Monitoring" : "Tracked"}
+                  </Pill>
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Project Health</span>
-                  <Pill tone={projectHealth.tone}>{projectHealth.label}</Pill>
+                  <span className="text-slate-400">Confidence</span>
+                  <Pill tone={project.confidence.toLowerCase().includes("unknown") ? "default" : project.confidence.toLowerCase().includes("low") ? "red" : project.confidence.toLowerCase().includes("medium") ? "amber" : "green"}>
+                    {project.confidence}
+                  </Pill>
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Known Risks</span>
-                  <Pill tone={project.risks.length ? "amber" : "default"}>{project.risks.length}</Pill>
+                  <span className="text-slate-400">Risks</span>
+                  <Pill tone={project.risks.length ? "amber" : "default"}>{project.risks.length ? `${project.risks.length} identified` : "None yet"}</Pill>
+                </div>
+
+                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
+                  <span className="text-slate-400">Progress</span>
+                  <Pill tone={project.progress === 0 ? "default" : project.progress < 20 ? "red" : project.progress < 60 ? "amber" : "green"}>{project.progress}%</Pill>
                 </div>
               </div>
             </Section>
@@ -688,7 +657,7 @@ ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") :
                   className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm leading-6 text-amber-100 outline-none focus:border-amber-400"
                 />
               ) : (
-                <ListBlock items={project.risks} tone="amber" score={fieldScores.risks} emptyText="No risks identified yet. Jarvis will populate this from the conversation." />
+                <ListBlock items={project.risks} tone="amber" state={fieldStates.risks} emptyText="No risks identified yet. Jarvis will populate this from the conversation." />
               )}
             </Section>
 
@@ -701,7 +670,7 @@ ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") :
                   className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 text-sm leading-6 text-emerald-100 outline-none focus:border-emerald-400"
                 />
               ) : (
-                <ListBlock items={project.decisions} tone="green" score={fieldScores.decisions} emptyText="No decisions recorded yet. Jarvis will populate this from the conversation." />
+                <ListBlock items={project.decisions} tone="green" state={fieldStates.decisions} emptyText="No decisions recorded yet. Jarvis will populate this from the conversation." />
               )}
             </Section>
           </aside>

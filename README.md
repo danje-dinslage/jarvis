@@ -1,17 +1,26 @@
-# Jarvis Web v0.9.1
+# Jarvis Web v1.0
 
-A browser-based prototype of Jarvis: an AI chief of staff for project navigation.
+Clean browser-based Jarvis prototype.
+
+## v1.0 changes
+
+- Unified right-panel Status card
+- Qualitative field states: Unknown / Initial / Partial / Defined / Validated
+- Removed arbitrary per-field percentages
+- Scope state stays Unknown/Monitoring until enough context exists
+- Intent-aware in-chat Status panel
+- Conservative progress bar remains as the only numeric progress indicator
+- Trust calibration / evidence precedence prompt retained
 
 ## Deploy
 
-1. Upload the contents of this folder to GitHub.
-2. Import the repo into Vercel.
-3. Add environment variables:
-   - `ANTHROPIC_API_KEY`
-   - optional `ANTHROPIC_MODEL`
-   - optional `BETA_PASSWORD`
-4. Deploy.
+Upload the contents of this folder to GitHub and deploy with Vercel.
 
-## Important
+Required environment variable:
+- `ANTHROPIC_API_KEY`
 
-This is a clean package. There should be no root-level `jarvis.ts` file.
+Optional:
+- `ANTHROPIC_MODEL`
+- `BETA_PASSWORD`
+
+No root-level `jarvis.ts`, `page.tsx`, or `route.ts` files should exist.

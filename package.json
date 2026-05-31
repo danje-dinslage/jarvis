@@ -1,6 +1,6 @@
 {
-  "name": "jarvis-web-clean-v0.9.1",
-  "version": "0.9.1",
+  "name": "jarvis-web-v1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
