@@ -1,4 +1,4 @@
-# Jarvis v0.2
+# Jarvis v0.5
 
 A hosted-web prototype for a constitution-governed AI project navigator.
 
@@ -66,7 +66,7 @@ It only tests one thing:
 
 Does talking to Jarvis feel materially different from talking to raw Claude?
 
-## v0.2.1 Personality Update
+## v0.5.1 Personality Update
 
 This version changes Jarvis from a rigid governance-report style to a more natural chief-of-staff voice.
 
@@ -80,7 +80,7 @@ Expected behavior:
 - fewer visible governance labels
 - still state-aware, scope-aware, and risk-aware
 
-## v0.3.0 — Auto State Update
+## v0.5.0 — Auto State Update
 
 - Jarvis now updates Mission, Status, Confidence, Approval, Next Action, Risks, and Decisions from conversation turns.
 - Side panels are read-only by default.

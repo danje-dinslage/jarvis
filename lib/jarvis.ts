@@ -4,6 +4,7 @@ export type ProjectState = {
   confidence: string;
   approval: string;
   nextAction: string;
+  progress: number;
   risks: string[];
   decisions: string[];
 };
@@ -14,6 +15,7 @@ export const defaultProjectState: ProjectState = {
   confidence: "Unknown",
   approval: "Not established",
   nextAction: "Start by telling Jarvis what you are building.",
+  progress: 0,
   risks: [],
   decisions: []
 };
@@ -31,6 +33,7 @@ Status: ${project.status || "Not initialized yet"}
 Confidence: ${project.confidence || "Unknown"}
 Approval state: ${project.approval || "Not established"}
 Next action: ${project.nextAction || "Ask the user what they are building"}
+Progress: ${Number.isFinite(project.progress) ? project.progress : 0}%
 Risks:
 ${project.risks.length ? project.risks.map((r) => `- ${r}`).join("\n") : "- None identified yet"}
 Decisions:
@@ -84,6 +87,7 @@ Do not invent facts.
 Do not add generic risks or decisions.
 Preserve useful existing risks and decisions unless clearly obsolete.
 Keep arrays concise: maximum 5 risks and maximum 5 decisions.
+Set progress as a realistic 0-100 percentage based on what is known about the project scope and current state. If scope is unknown, keep progress low. Do not inflate progress just because the conversation is positive.
 Use short, plain language.
 
 Return ONLY valid JSON with exactly this shape:
@@ -93,6 +97,7 @@ Return ONLY valid JSON with exactly this shape:
   "confidence": "string",
   "approval": "string",
   "nextAction": "string",
+  "progress": 0,
   "risks": ["string"],
   "decisions": ["string"]
 }`;
@@ -113,6 +118,7 @@ export function normalizeProjectState(input: any, fallback: ProjectState): Proje
     confidence: typeof input?.confidence === "string" && input.confidence.trim() ? input.confidence.trim() : fallback.confidence,
     approval: typeof input?.approval === "string" && input.approval.trim() ? input.approval.trim() : fallback.approval,
     nextAction: typeof input?.nextAction === "string" && input.nextAction.trim() ? input.nextAction.trim() : fallback.nextAction,
+    progress: typeof input?.progress === "number" && Number.isFinite(input.progress) ? Math.max(0, Math.min(100, Math.round(input.progress))) : fallback.progress,
     risks: cleanArray(input?.risks, fallback.risks),
     decisions: cleanArray(input?.decisions, fallback.decisions)
   };

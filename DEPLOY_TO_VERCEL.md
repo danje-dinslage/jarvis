@@ -1,4 +1,4 @@
-# Deploy Jarvis v0.2 to Vercel
+# Deploy Jarvis v0.5 to Vercel
 
 ## Fast path
 
