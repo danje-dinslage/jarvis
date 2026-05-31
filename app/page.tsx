@@ -24,27 +24,15 @@ import { defaultProjectState, type ProjectState } from "@/lib/jarvis";
 type Message = {
   role: "user" | "assistant";
   content: string;
-};
-
-type ActivityIntent =
-  | "initialize"
-  | "scope"
-  | "risk"
-  | "progress"
-  | "direction"
-  | "handover"
-  | "default";
-
-type ActivityStep = {
-  label: string;
-  status: string;
+  timestamp?: string; // ISO-8601, added v1.4
 };
 
 const initialAssistantMessage: Message = {
   role: "assistant",
   content: `Hello. What are we building?
 
-Tell me in plain language. I will turn the conversation into mission, risks, decisions, and the next action automatically.`
+Tell me in plain language. I will turn the conversation into mission, risks, decisions, and the next action automatically.`,
+  timestamp: new Date().toISOString()
 };
 
 const starters = [
@@ -53,75 +41,6 @@ const starters = [
   "Should we add team features now?",
   "Create a handover for this project."
 ];
-
-function detectActivityIntent(input: string): ActivityIntent {
-  const clean = input.toLowerCase();
-
-  if (clean.includes("handover") || clean.includes("summary") || clean.includes("summarize")) return "handover";
-  if (clean.includes("account") || clean.includes("payment") || clean.includes("slack") || clean.includes("team") || clean.includes("mobile") || clean.includes("integration") || clean.includes("add ")) return "scope";
-  if (clean.includes("risk") || clean.includes("danger") || clean.includes("concern") || clean.includes("wrong")) return "risk";
-  if (clean.includes("deployed") || clean.includes("built") || clean.includes("completed") || clean.includes("shipped") || clean.includes("released") || clean.includes("testing")) return "progress";
-  if (clean.includes("what should") || clean.includes("next") || clean.includes("do now") || clean.includes("build next")) return "direction";
-  if (clean.includes("we are building") || clean.includes("i am building") || clean.includes("we're building") || clean.includes("i'm building")) return "initialize";
-
-  return "default";
-}
-
-function activityStepsForIntent(intent: ActivityIntent): ActivityStep[] {
-  const steps: Record<ActivityIntent, ActivityStep[]> = {
-    initialize: [
-      { label: "Extracting mission", status: "Reading" },
-      { label: "Identifying project stage", status: "Mapping" },
-      { label: "Finding early risks", status: "Scanning" },
-      { label: "Creating project state", status: "Updating" },
-      { label: "Preparing orientation", status: "Drafting" }
-    ],
-    scope: [
-      { label: "Reviewing current mission", status: "OK" },
-      { label: "Checking for scope drift", status: "Scanning" },
-      { label: "Comparing request to current phase", status: "Testing" },
-      { label: "Estimating complexity impact", status: "Assessing" },
-      { label: "Preparing pushback or path forward", status: "Drafting" }
-    ],
-    risk: [
-      { label: "Reviewing known risks", status: "OK" },
-      { label: "Looking for hidden assumptions", status: "Scanning" },
-      { label: "Checking evidence level", status: "Testing" },
-      { label: "Prioritizing the largest threat", status: "Ranking" },
-      { label: "Preparing risk guidance", status: "Drafting" }
-    ],
-    progress: [
-      { label: "Reading user-reported milestone", status: "Accepted" },
-      { label: "Separating reported from verified", status: "Calibrating" },
-      { label: "Updating project stage", status: "Updating" },
-      { label: "Adjusting progress conservatively", status: "Scoring" },
-      { label: "Preparing next-step guidance", status: "Drafting" }
-    ],
-    direction: [
-      { label: "Reviewing mission and next action", status: "OK" },
-      { label: "Checking unresolved decisions", status: "Scanning" },
-      { label: "Assessing momentum vs. risk", status: "Balancing" },
-      { label: "Selecting smallest useful next step", status: "Choosing" },
-      { label: "Preparing recommendation", status: "Drafting" }
-    ],
-    handover: [
-      { label: "Collecting current state", status: "OK" },
-      { label: "Reviewing decisions", status: "Scanning" },
-      { label: "Summarizing open risks", status: "Drafting" },
-      { label: "Selecting next step", status: "Choosing" },
-      { label: "Preparing handover", status: "Writing" }
-    ],
-    default: [
-      { label: "Reviewing mission", status: "OK" },
-      { label: "Checking project state", status: "Scanning" },
-      { label: "Testing assumptions", status: "Calibrating" },
-      { label: "Assessing risk", status: "Scanning" },
-      { label: "Preparing response", status: "Drafting" }
-    ]
-  };
-
-  return steps[intent];
-}
 
 function Pill({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "green" | "amber" | "blue" | "red" }) {
   const styles = {
@@ -243,54 +162,35 @@ function ProgressBar({ value }: { value: number }) {
   );
 }
 
-function JarvisActivityPanel({ intent }: { intent: ActivityIntent }) {
-  const steps = activityStepsForIntent(intent);
-  const intentLabel = {
-    initialize: "Project initialization",
-    scope: "Scope check",
-    risk: "Risk scan",
-    progress: "Progress calibration",
-    direction: "Next-step selection",
-    handover: "Handover assembly",
-    default: "Project-state check"
-  }[intent];
+// JarvisThinkingIndicator — honest thinking state, added v1.4
+// Red glowing eye + elapsed seconds. No fake steps.
+function JarvisThinkingIndicator() {
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  const elapsed = mins > 0 ? `${mins}:${String(secs).padStart(2, "0")}` : `0:${String(secs).padStart(2, "0")}`;
 
   return (
-    <div className="mr-6 overflow-hidden rounded-3xl border border-blue-400/30 bg-blue-500/10 p-5 text-sm text-blue-100 shadow-lg shadow-blue-500/10">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 font-semibold text-blue-100">
-          <Sparkles className="h-4 w-4 animate-pulse text-blue-300" />
-          Status
+    <div className="mr-6 flex items-start gap-4 rounded-3xl border border-rose-500/20 bg-rose-500/5 p-5">
+      {/* Red glowing eye */}
+      <div className="relative mt-0.5 shrink-0">
+        <div className="h-4 w-4 rounded-full bg-rose-500 shadow-[0_0_12px_3px_rgba(239,68,68,0.6)]" style={{ animation: "pulse 1.5s ease-in-out infinite" }} />
+      </div>
+      <div>
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm font-semibold text-rose-200">On it...</span>
+          <span className="font-mono text-xs text-rose-400">{elapsed}</span>
         </div>
-        <div className="rounded-full border border-blue-400/20 bg-blue-400/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-blue-200">
-          {intentLabel}
-        </div>
+        {seconds >= 10 && (
+          <p className="mt-1 text-xs text-rose-300/70">Bear with me.</p>
+        )}
       </div>
-
-      <div className="mb-4 h-2 overflow-hidden rounded-full bg-slate-800">
-        <div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-blue-400 via-cyan-300 to-blue-500" />
-      </div>
-
-      <div className="space-y-2">
-        {steps.map((step, index) => (
-          <div key={step.label} className="flex items-center justify-between rounded-2xl border border-blue-500/10 bg-slate-950/40 px-3 py-2">
-            <span className="flex items-center gap-2 text-slate-200">
-              <span
-                className="h-2 w-2 animate-pulse rounded-full bg-cyan-300 shadow-lg shadow-cyan-300/40"
-                style={{ animationDelay: `${index * 180}ms` }}
-              />
-              {step.label}
-            </span>
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-300">
-              {step.status}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <p className="mt-4 text-xs leading-5 text-blue-200/70">
-        High-level project checks for this request. This is a visible status plan, not hidden reasoning.
-      </p>
     </div>
   );
 }
@@ -357,7 +257,6 @@ export default function Home() {
   const [exportBaseName, setExportBaseName] = useState("jarvis-project");
   const [loading, setLoading] = useState(false);
   const [orientationLoading, setOrientationLoading] = useState(false);
-  const [activityIntent, setActivityIntent] = useState<ActivityIntent>("default");
   const [error, setError] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [lastStateUpdate, setLastStateUpdate] = useState("No project initialized yet");
@@ -408,7 +307,23 @@ export default function Home() {
       }
     }
 
-    if (savedHistory) setHistory(JSON.parse(savedHistory));
+    if (savedHistory) {
+      const parsedHistory: Message[] = JSON.parse(savedHistory);
+      setHistory(parsedHistory);
+      // Session age trigger — if last message is older than 8 hours, fire orientation
+      if (parsedHistory.length > 1) {
+        const last = parsedHistory[parsedHistory.length - 1];
+        if (last.timestamp) {
+          const ageHours = (Date.now() - new Date(last.timestamp).getTime()) / (1000 * 60 * 60);
+          if (ageHours >= 8) {
+            const savedProject = saved ? JSON.parse(saved) : null;
+            if (savedProject?.mission) {
+              fetchOrientation(savedProject, loadedPassword);
+            }
+          }
+        }
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -605,9 +520,8 @@ Load this project state and continue from the next action above. Treat this file
 
     setError("");
     setMessage("");
-    setActivityIntent(detectActivityIntent(finalMessage));
 
-    const userMsg: Message = { role: "user", content: finalMessage };
+    const userMsg: Message = { role: "user", content: finalMessage, timestamp: new Date().toISOString() };
     setHistory((h) => [...h, userMsg]);
     setLoading(true);
 
@@ -626,7 +540,7 @@ Load this project state and continue from the next action above. Treat this file
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Request failed");
 
-      setHistory((h) => [...h, { role: "assistant", content: data.reply }]);
+      setHistory((h) => [...h, { role: "assistant", content: data.reply, timestamp: new Date().toISOString() }]);
 
       if (data.project) {
         setProject(data.project);
@@ -830,7 +744,7 @@ ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") :
                 </div>
               ))}
 
-              {loading && <JarvisActivityPanel intent={activityIntent} />}
+              {loading && <JarvisThinkingIndicator />}
 
               {orientationLoading && (
                 <div className="mr-6 overflow-hidden rounded-3xl border border-blue-400/30 bg-blue-500/10 p-5 text-sm text-blue-100">
