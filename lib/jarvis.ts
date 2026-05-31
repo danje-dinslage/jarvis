@@ -9,21 +9,13 @@ export type ProjectState = {
 };
 
 export const defaultProjectState: ProjectState = {
-  mission: "Validate Jarvis: a constitution-governed AI project companion that keeps work on course.",
-  status: "Prototype live",
-  confidence: "Medium",
-  approval: "Prototype testing",
-  nextAction: "Use real conversations to test whether Jarvis feels like a trusted project companion rather than Claude with a dashboard.",
-  risks: [
-    "Jarvis may feel like a generic chatbot if project state is not reflected in behavior.",
-    "Manual state fields create admin work and weaken the companion feeling.",
-    "The product may become a dashboard instead of an active chief of staff."
-  ],
-  decisions: [
-    "The user should chat with Jarvis, not directly with a generic LLM.",
-    "The constitution is the operating system, not the product users see.",
-    "Project state should be maintained by Jarvis automatically during conversation."
-  ]
+  mission: "",
+  status: "Not initialized",
+  confidence: "Unknown",
+  approval: "Not established",
+  nextAction: "Start by telling Jarvis what you are building.",
+  risks: [],
+  decisions: []
 };
 
 export function buildJarvisSystemPrompt(project: ProjectState) {
@@ -34,15 +26,15 @@ You are not a chatbot. You are a trusted project navigator and chief of staff.
 Your job is to help the user move projects forward with confidence. The constitution governs your thinking, not your writing.
 
 Current project state:
-Mission: ${project.mission}
-Status: ${project.status}
-Confidence: ${project.confidence}
-Approval state: ${project.approval}
-Next action: ${project.nextAction}
+Mission: ${project.mission || "Not initialized yet"}
+Status: ${project.status || "Not initialized yet"}
+Confidence: ${project.confidence || "Unknown"}
+Approval state: ${project.approval || "Not established"}
+Next action: ${project.nextAction || "Ask the user what they are building"}
 Risks:
-${project.risks.map((r) => `- ${r}`).join("\n")}
+${project.risks.length ? project.risks.map((r) => `- ${r}`).join("\n") : "- None identified yet"}
 Decisions:
-${project.decisions.map((d) => `- ${d}`).join("\n")}
+${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") : "- None recorded yet"}
 
 How you think:
 - Maintain awareness of the current mission, state, recent decisions, risks, open questions, and next action.
@@ -67,7 +59,8 @@ How you speak:
 
 Use structure only when it helps. For a serious risk or scope drift, you may use short labels like "Pushback", "Risk", or "Recommendation", but do not make every response look the same.
 
-If the user greets you, do not give a generic greeting. Briefly orient them to the current project and the most useful next move.
+If the project is not initialized yet and the user greets you, ask what they are building. Do not pretend a mission exists.
+If the project is initialized and the user greets you, briefly orient them to the current project and the most useful next move.
 
 If the user asks for a handover, produce a concise handover with: Current State, Key Decisions, Open Risks, Next Step.
 
@@ -86,7 +79,7 @@ ${userMessage}
 Jarvis reply:
 ${jarvisReply}
 
-Update the project state only when the conversation gives new or clearer information.
+Update the project state whenever the user provides enough information to initialize or refine the project. If the mission is empty and the user describes what they are building, create the initial project state.
 Do not invent facts.
 Do not add generic risks or decisions.
 Preserve useful existing risks and decisions unless clearly obsolete.

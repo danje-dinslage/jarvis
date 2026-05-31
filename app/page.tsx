@@ -11,9 +11,9 @@ type Message = {
 
 const initialAssistantMessage: Message = {
   role: "assistant",
-  content: `Good. New session started.
+  content: `Hello. What are we building?
 
-Tell me what we are working on, or ask what we should do next. I will keep the project state updated from the conversation so you do not have to maintain the side panels manually.`
+Tell me in plain language. I will turn the conversation into mission, risks, decisions, and the next action automatically.`
 };
 
 const starters = [
@@ -54,7 +54,7 @@ function ReadOnlyBlock({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{value || "—"}</div>
+      <div className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{value || "Not initialized yet. Jarvis will fill this from the conversation."}</div>
     </div>
   );
 }
@@ -94,11 +94,11 @@ export default function Home() {
   const [betaPassword, setBetaPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [lastStateUpdate, setLastStateUpdate] = useState("Not yet updated this session");
+  const [lastStateUpdate, setLastStateUpdate] = useState("No project initialized yet");
 
   useEffect(() => {
-    const saved = localStorage.getItem("jarvis-project-state-v03");
-    const savedHistory = localStorage.getItem("jarvis-history-v03");
+    const saved = localStorage.getItem("jarvis-project-state-v04");
+    const savedHistory = localStorage.getItem("jarvis-history-v04");
     const savedPassword = localStorage.getItem("jarvis-beta-password-v02");
 
     if (saved) {
@@ -111,12 +111,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("jarvis-project-state-v03", JSON.stringify(project));
+    localStorage.setItem("jarvis-project-state-v04", JSON.stringify(project));
     setDraftProject(project);
   }, [project]);
 
   useEffect(() => {
-    localStorage.setItem("jarvis-history-v03", JSON.stringify(history));
+    localStorage.setItem("jarvis-history-v04", JSON.stringify(history));
   }, [history]);
 
   useEffect(() => {
@@ -154,7 +154,18 @@ export default function Home() {
     setHistory([initialAssistantMessage]);
     setMessage("");
     setError("");
-    localStorage.removeItem("jarvis-history-v03");
+    localStorage.removeItem("jarvis-history-v04");
+  }
+
+  function resetProject() {
+    setProject(defaultProjectState);
+    setDraftProject(defaultProjectState);
+    setHistory([initialAssistantMessage]);
+    setMessage("");
+    setError("");
+    setLastStateUpdate("No project initialized yet");
+    localStorage.removeItem("jarvis-project-state-v04");
+    localStorage.removeItem("jarvis-history-v04");
   }
 
   async function send(custom?: string) {
@@ -240,6 +251,13 @@ ${project.decisions.map((d) => `- ${d}`).join("\n")}`;
               <RefreshCcw className="h-3.5 w-3.5" />
               New Session
             </button>
+            <button
+              onClick={resetProject}
+              className="inline-flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-100 transition hover:border-rose-400"
+              title="Clear project state and start from an empty first-run experience."
+            >
+              Reset Project
+            </button>
             <Pill tone="green"><ShieldCheck className="h-3.5 w-3.5" /> Jarvis Layer Active</Pill>
             <Pill tone={projectHealth.tone}>{projectHealth.label}</Pill>
             <Pill tone="blue">Claude Powered</Pill>
@@ -295,7 +313,7 @@ ${project.decisions.map((d) => `- ${d}`).join("\n")}`;
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-bold">Chat with Jarvis</h2>
-                  <p className="mt-1 text-sm text-slate-400">Talk naturally. Jarvis updates the project state automatically.</p>
+                  <p className="mt-1 text-sm text-slate-400">Talk naturally. Jarvis will create and update the project state automatically.</p>
                 </div>
 
                 <div className="hidden items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-400 sm:flex">
