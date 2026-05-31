@@ -24,6 +24,7 @@ function Pill({ children, tone = "default" }: { children: React.ReactNode; tone?
     blue: "border-blue-500/30 bg-blue-500/10 text-blue-200",
     red: "border-rose-500/30 bg-rose-500/10 text-rose-200"
   }[tone];
+
   return <span className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium ${styles}`}>{children}</span>;
 }
 
@@ -57,15 +58,14 @@ export default function Home() {
   const [project, setProject] = useState<ProjectState>(defaultProjectState);
   const [message, setMessage] = useState("");
   const [history, setHistory] = useState<Message[]>([
-  {
-    role: "assistant",
-    content: `Good. The browser prototype is live.
+    {
+      role: "assistant",
+      content: `Good. The browser prototype is live.
 
 Current focus: prove Jarvis feels like a project companion, not Claude with a dashboard.
 
 Best next move: test me with scope drift, uncertainty, and project-direction questions.`
-  }
-]);
+    }
   ]);
   const [betaPassword, setBetaPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -75,6 +75,7 @@ Best next move: test me with scope drift, uncertainty, and project-direction que
     const saved = localStorage.getItem("jarvis-project-state-v02");
     const savedHistory = localStorage.getItem("jarvis-history-v02");
     const savedPassword = localStorage.getItem("jarvis-beta-password-v02");
+
     if (saved) setProject(JSON.parse(saved));
     if (savedHistory) setHistory(JSON.parse(savedHistory));
     if (savedPassword) setBetaPassword(savedPassword);
@@ -99,14 +100,22 @@ Best next move: test me with scope drift, uncertainty, and project-direction que
   }, [project]);
 
   function updateArrayField(field: "risks" | "decisions", text: string) {
-    setProject((p) => ({ ...p, [field]: text.split("\n").map((x) => x.trim()).filter(Boolean) }));
+    setProject((p) => ({
+      ...p,
+      [field]: text
+        .split("\n")
+        .map((x) => x.trim())
+        .filter(Boolean)
+    }));
   }
 
   async function send(custom?: string) {
     const finalMessage = (custom ?? message).trim();
     if (!finalMessage || loading) return;
+
     setError("");
     setMessage("");
+
     const userMsg: Message = { role: "user", content: finalMessage };
     setHistory((h) => [...h, userMsg]);
     setLoading(true);
@@ -122,8 +131,10 @@ Best next move: test me with scope drift, uncertainty, and project-direction que
           betaPassword
         })
       });
+
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Request failed");
+
       setHistory((h) => [...h, { role: "assistant", content: data.reply }]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -133,7 +144,24 @@ Best next move: test me with scope drift, uncertainty, and project-direction que
   }
 
   function copyState() {
-    const text = `JARVIS PROJECT STATE\n\nMission:\n${project.mission}\n\nStatus: ${project.status}\nConfidence: ${project.confidence}\nApproval: ${project.approval}\n\nNext Action:\n${project.nextAction}\n\nRisks:\n${project.risks.map((r) => `- ${r}`).join("\n")}\n\nDecisions:\n${project.decisions.map((d) => `- ${d}`).join("\n")}`;
+    const text = `JARVIS PROJECT STATE
+
+Mission:
+${project.mission}
+
+Status: ${project.status}
+Confidence: ${project.confidence}
+Approval: ${project.approval}
+
+Next Action:
+${project.nextAction}
+
+Risks:
+${project.risks.map((r) => `- ${r}`).join("\n")}
+
+Decisions:
+${project.decisions.map((d) => `- ${d}`).join("\n")}`;
+
     navigator.clipboard.writeText(text);
   }
 
@@ -150,8 +178,11 @@ Best next move: test me with scope drift, uncertainty, and project-direction que
               <p className="text-sm text-slate-400">AI chief of staff for project navigation</p>
             </div>
           </div>
+
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Pill tone="green"><ShieldCheck className="h-3.5 w-3.5" /> Jarvis Layer Active</Pill>
+            <Pill tone="green">
+              <ShieldCheck className="h-3.5 w-3.5" /> Jarvis Layer Active
+            </Pill>
             <Pill tone={projectHealth.tone}>{projectHealth.label}</Pill>
             <Pill tone="blue">Claude Powered</Pill>
           </div>
@@ -163,11 +194,14 @@ Best next move: test me with scope drift, uncertainty, and project-direction que
               <div className="space-y-4">
                 <TextField label="Mission" value={project.mission} onChange={(v) => setProject((p) => ({ ...p, mission: v }))} rows={4} />
                 <TextField label="Next Action" value={project.nextAction} onChange={(v) => setProject((p) => ({ ...p, nextAction: v }))} rows={3} />
+
                 <div className="grid grid-cols-2 gap-3">
                   <TextField label="Status" value={project.status} onChange={(v) => setProject((p) => ({ ...p, status: v }))} rows={1} />
                   <TextField label="Confidence" value={project.confidence} onChange={(v) => setProject((p) => ({ ...p, confidence: v }))} rows={1} />
                 </div>
+
                 <TextField label="Approval" value={project.approval} onChange={(v) => setProject((p) => ({ ...p, approval: v }))} rows={1} />
+
                 <button onClick={copyState} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:bg-slate-900">
                   <Clipboard className="h-4 w-4" /> Copy State
                 </button>
@@ -182,10 +216,12 @@ Best next move: test me with scope drift, uncertainty, and project-direction que
                   <h2 className="text-xl font-bold">Chat with Jarvis</h2>
                   <p className="mt-1 text-sm text-slate-400">Jarvis answers through mission, risk, decisions, and scope.</p>
                 </div>
+
                 <div className="hidden items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-400 sm:flex">
                   <Lock className="h-3.5 w-3.5" /> {project.approval}
                 </div>
               </div>
+
               <div className="mt-4 flex flex-wrap gap-2">
                 {starters.map((s) => (
                   <button key={s} onClick={() => send(s)} className="rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-blue-400 hover:text-blue-200">
@@ -202,14 +238,17 @@ Best next move: test me with scope drift, uncertainty, and project-direction que
                     {m.role === "assistant" ? <Brain className="h-4 w-4 text-blue-300" /> : <Compass className="h-4 w-4 text-slate-400" />}
                     {m.role === "assistant" ? "Jarvis" : "You"}
                   </div>
+
                   <div className="whitespace-pre-wrap text-sm leading-7 text-slate-200">{m.content}</div>
                 </div>
               ))}
+
               {loading && (
                 <div className="mr-6 rounded-3xl border border-blue-500/20 bg-blue-500/10 p-5 text-sm text-blue-100">
                   Jarvis is checking mission, scope, risk, and evidence...
                 </div>
               )}
+
               {error && (
                 <div className="rounded-3xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-100">
                   {error}
@@ -226,10 +265,12 @@ Best next move: test me with scope drift, uncertainty, and project-direction que
                   placeholder="Tell Jarvis what you want to do..."
                   className="flex-1 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-blue-400"
                 />
+
                 <button onClick={() => send()} className="rounded-2xl bg-blue-500 px-5 py-4 font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400">
                   <Send className="h-5 w-5" />
                 </button>
               </div>
+
               <input
                 value={betaPassword}
                 onChange={(e) => setBetaPassword(e.target.value)}
@@ -242,10 +283,25 @@ Best next move: test me with scope drift, uncertainty, and project-direction que
           <aside className="col-span-12 space-y-5 lg:col-span-3">
             <Section title="Navigation Signals" icon={ShieldCheck}>
               <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3"><span className="text-slate-400">Scope Drift</span><Pill tone="green">Checked</Pill></div>
-                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3"><span className="text-slate-400">Approval State</span><Pill tone="amber">{project.approval}</Pill></div>
-                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3"><span className="text-slate-400">Project Health</span><Pill tone={projectHealth.tone}>{projectHealth.label}</Pill></div>
-                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3"><span className="text-slate-400">Known Risks</span><Pill tone="amber">{project.risks.length}</Pill></div>
+                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
+                  <span className="text-slate-400">Scope Drift</span>
+                  <Pill tone="green">Checked</Pill>
+                </div>
+
+                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
+                  <span className="text-slate-400">Approval State</span>
+                  <Pill tone="amber">{project.approval}</Pill>
+                </div>
+
+                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
+                  <span className="text-slate-400">Project Health</span>
+                  <Pill tone={projectHealth.tone}>{projectHealth.label}</Pill>
+                </div>
+
+                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
+                  <span className="text-slate-400">Known Risks</span>
+                  <Pill tone="amber">{project.risks.length}</Pill>
+                </div>
               </div>
             </Section>
 
