@@ -59,7 +59,11 @@ export default function Home() {
   const [history, setHistory] = useState<Message[]>([
     {
       role: "assistant",
-      content: "Jarvis online. I will answer through the project constitution: state-aware, risk-aware, scope-aware, and focused on controlled progress."
+      content: "Good. The browser prototype is live.
+
+Current focus: prove Jarvis feels like a project companion, not Claude with a dashboard.
+
+Best next move: test me with scope drift, uncertainty, and project-direction questions."
     }
   ]);
   const [betaPassword, setBetaPassword] = useState("");
@@ -142,11 +146,11 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Jarvis</h1>
-              <p className="text-sm text-slate-400">Constitution-governed AI project navigator</p>
+              <p className="text-sm text-slate-400">AI chief of staff for project navigation</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Pill tone="green"><ShieldCheck className="h-3.5 w-3.5" /> Constitution Layer Active</Pill>
+            <Pill tone="green"><ShieldCheck className="h-3.5 w-3.5" /> Jarvis Layer Active</Pill>
             <Pill tone={projectHealth.tone}>{projectHealth.label}</Pill>
             <Pill tone="blue">Claude Powered</Pill>
           </div>
@@ -235,7 +239,7 @@ export default function Home() {
           </section>
 
           <aside className="col-span-12 space-y-5 lg:col-span-3">
-            <Section title="Constitution Signals" icon={ShieldCheck}>
+            <Section title="Navigation Signals" icon={ShieldCheck}>
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3"><span className="text-slate-400">Scope Drift</span><Pill tone="green">Checked</Pill></div>
                 <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3"><span className="text-slate-400">Approval State</span><Pill tone="amber">{project.approval}</Pill></div>

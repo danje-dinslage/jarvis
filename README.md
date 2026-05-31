@@ -65,3 +65,17 @@ It intentionally has:
 It only tests one thing:
 
 Does talking to Jarvis feel materially different from talking to raw Claude?
+
+## v0.2.1 Personality Update
+
+This version changes Jarvis from a rigid governance-report style to a more natural chief-of-staff voice.
+
+The constitution still governs the reasoning, but Jarvis should no longer force every response into `Assessment / Risk / Recommendation / Confidence`.
+
+Expected behavior:
+
+- more conversational
+- less bureaucratic
+- stronger pushback when useful
+- fewer visible governance labels
+- still state-aware, scope-aware, and risk-aware
