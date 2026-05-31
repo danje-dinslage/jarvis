@@ -195,7 +195,73 @@ function JarvisThinkingIndicator() {
   );
 }
 
-// ReadOnlyBlock — displays a single labelled field with state indicator
+// JarvisOrientingIndicator — shown during orientation load. Added v1.5.
+// Same red eye treatment as thinking, different label.
+function JarvisOrientingIndicator() {
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  const elapsed = mins > 0 ? `${mins}:${String(secs).padStart(2, "0")}` : `0:${String(secs).padStart(2, "0")}`;
+
+  return (
+    <div className="mr-6 flex items-start gap-4 rounded-3xl border border-rose-500/20 bg-rose-500/5 p-5">
+      <div className="relative mt-0.5 shrink-0">
+        <div className="h-4 w-4 rounded-full bg-rose-500 shadow-[0_0_12px_3px_rgba(239,68,68,0.6)]" style={{ animation: "pulse 1.5s ease-in-out infinite" }} />
+      </div>
+      <div>
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm font-semibold text-rose-200">Reviewing your project...</span>
+          <span className="font-mono text-xs text-rose-400">{elapsed}</span>
+        </div>
+        {seconds >= 10 && (
+          <p className="mt-1 text-xs text-rose-300/70">Bear with me.</p>
+        )}
+      </div>
+    </div>
+  );
+} — returns human-readable relative time, e.g. "2 days ago"
+// Falls back to absolute if > 7 days. Added v1.5.
+function formatRelativeTime(iso: string): string {
+  const now = Date.now();
+  const then = new Date(iso).getTime();
+  const diff = now - then;
+  if (isNaN(diff)) return "";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+// formatAbsoluteTime — full timestamp for hover tooltip
+function formatAbsoluteTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: "short", day: "numeric", year: "numeric",
+    hour: "2-digit", minute: "2-digit"
+  });
+}
+
+// MessageTimestamp — relative time with absolute on hover. Added v1.5.
+function MessageTimestamp({ iso }: { iso: string }) {
+  if (!iso) return null;
+  return (
+    <span
+      className="ml-auto text-xs text-slate-600 transition hover:text-slate-400 cursor-default"
+      title={formatAbsoluteTime(iso)}
+    >
+      {formatRelativeTime(iso)}
+    </span>
+  );
+}
 function ReadOnlyBlock({ label, value, state }: { label: string; value: string; state: FieldState }) {
   const isEmpty = !value || value.trim().length === 0;
   return (
@@ -738,6 +804,7 @@ ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") :
                   <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
                     {m.role === "assistant" ? <Brain className="h-4 w-4 text-blue-300" /> : <Compass className="h-4 w-4 text-slate-400" />}
                     {m.role === "assistant" ? "Jarvis" : "You"}
+                    {m.timestamp && <MessageTimestamp iso={m.timestamp} />}
                   </div>
 
                   <div className="whitespace-pre-wrap text-sm leading-7 text-slate-200">{m.content}</div>
@@ -746,15 +813,7 @@ ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") :
 
               {loading && <JarvisThinkingIndicator />}
 
-              {orientationLoading && (
-                <div className="mr-6 overflow-hidden rounded-3xl border border-blue-400/30 bg-blue-500/10 p-5 text-sm text-blue-100">
-                  <div className="flex items-center gap-2 font-semibold text-blue-100">
-                    <Sparkles className="h-4 w-4 animate-pulse text-blue-300" />
-                    Orienting...
-                  </div>
-                  <p className="mt-2 text-xs text-blue-200/70">Reviewing project state and identifying the highest-leverage next move.</p>
-                </div>
-              )}
+              {orientationLoading && <JarvisOrientingIndicator />}
 
               {error && (
                 <div className="rounded-3xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-100">
