@@ -6,12 +6,9 @@
   color-scheme: dark;
 }
 
+html,
 body {
   margin: 0;
+  min-height: 100%;
   background: #020617;
-  color: #e2e8f0;
-}
-
-textarea, input, button {
-  font: inherit;
 }

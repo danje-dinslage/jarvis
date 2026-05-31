@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Jarvis v0.2",
-  description: "Constitution-governed AI project navigator prototype",
+  title: "Jarvis",
+  description: "AI chief of staff for project navigation"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
