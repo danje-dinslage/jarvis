@@ -76,7 +76,7 @@ function TextField({ label, value, onChange, rows = 3 }: { label: string; value:
   );
 }
 
-function ListBlock({ items, tone = "default", score }: { items: string[]; tone?: "amber" | "green" | "default"; score: number }) {
+function ListBlock({ items, tone = "default", score }: { items: string[]; tone?: "amber" | "green" | "default"; score: number | null }) {
   const color = tone === "amber" ? "border-amber-500/20 bg-amber-500/10 text-amber-100" : tone === "green" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-100" : "border-slate-800 bg-slate-900/60 text-slate-100";
   if (!items.length) return <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-500"><div className="mb-2 flex justify-end"><FieldHealth score={score} /></div>Nothing recorded yet. Jarvis will populate this from the conversation.</div>;
   return (
