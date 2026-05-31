@@ -225,7 +225,9 @@ function JarvisOrientingIndicator() {
       </div>
     </div>
   );
-} — returns human-readable relative time, e.g. "2 days ago"
+}
+
+// formatRelativeTime — returns human-readable relative time, e.g. "2 days ago"
 // Falls back to absolute if > 7 days. Added v1.5.
 function formatRelativeTime(iso: string): string {
   const now = Date.now();
