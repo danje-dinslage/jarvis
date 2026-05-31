@@ -1,12 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Brain, CheckCircle2, Clipboard, Compass, Lock, Send, ShieldCheck, Sparkles, Target } from "lucide-react";
+import { AlertTriangle, Brain, CheckCircle2, Clipboard, Compass, Lock, RefreshCcw, Send, ShieldCheck, Sparkles, Target } from "lucide-react";
 import { defaultProjectState, type ProjectState } from "@/lib/jarvis";
 
 type Message = {
   role: "user" | "assistant";
   content: string;
+};
+
+const initialAssistantMessage: Message = {
+  role: "assistant",
+  content: `Good. New session started.
+
+Current focus: prove Jarvis feels like a project companion, not Claude with a dashboard.
+
+Best next move: test me with scope drift, uncertainty, and project-direction questions.`
 };
 
 const starters = [
@@ -57,16 +66,7 @@ function TextField({ label, value, onChange, rows = 3 }: { label: string; value:
 export default function Home() {
   const [project, setProject] = useState<ProjectState>(defaultProjectState);
   const [message, setMessage] = useState("");
-  const [history, setHistory] = useState<Message[]>([
-    {
-      role: "assistant",
-      content: `Good. The browser prototype is live.
-
-Current focus: prove Jarvis feels like a project companion, not Claude with a dashboard.
-
-Best next move: test me with scope drift, uncertainty, and project-direction questions.`
-    }
-  ]);
+  const [history, setHistory] = useState<Message[]>([initialAssistantMessage]);
   const [betaPassword, setBetaPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -107,6 +107,13 @@ Best next move: test me with scope drift, uncertainty, and project-direction que
         .map((x) => x.trim())
         .filter(Boolean)
     }));
+  }
+
+  function newSession() {
+    setHistory([initialAssistantMessage]);
+    setMessage("");
+    setError("");
+    localStorage.removeItem("jarvis-history-v02");
   }
 
   async function send(custom?: string) {
@@ -180,6 +187,14 @@ ${project.decisions.map((d) => `- ${d}`).join("\n")}`;
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              onClick={newSession}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-medium text-slate-200 transition hover:border-blue-400 hover:text-blue-200"
+              title="Clear chat history but keep mission state, risks, decisions, and approval state."
+            >
+              <RefreshCcw className="h-3.5 w-3.5" />
+              New Session
+            </button>
             <Pill tone="green">
               <ShieldCheck className="h-3.5 w-3.5" /> Jarvis Layer Active
             </Pill>
