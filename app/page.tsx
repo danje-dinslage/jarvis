@@ -10,7 +10,6 @@ import {
   Download,
   Upload,
   Edit3,
-  Lock,
   RefreshCcw,
   Save,
   Send,
@@ -273,9 +272,10 @@ function ReadOnlyBlock({ label, value, state }: { label: string; value: string; 
   const isEmpty = !value || value.trim().length === 0;
   return (
     <div className="space-y-1">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        <StateDot state={state} />
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
-        <FieldStateBadge state={state} />
+        <span className="ml-auto text-xs text-slate-600">{state}</span>
       </div>
       <p className={`text-sm leading-6 ${isEmpty ? "text-slate-600 italic" : "text-slate-200"}`}>
         {isEmpty ? "Not defined" : value}
@@ -820,16 +820,12 @@ ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") :
             </Section>
           </aside>
 
-          <section className="col-span-12 flex min-h-[720px] max-h-[calc(100vh-150px)] flex-col rounded-3xl border border-slate-800 bg-slate-950/80 shadow-2xl shadow-black/30 lg:col-span-6">
-            <div className="border-b border-slate-800 px-6 py-5">
-              <div className="flex items-center justify-between gap-4">
+          <section className="col-span-12 flex h-[calc(100vh-150px)] min-h-[600px] flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950/80 shadow-2xl shadow-black/30 lg:col-span-6">
+            <div className="shrink-0 border-b border-slate-800 px-6 py-5">
+              <div className="flex items-center gap-4">
                 <div>
                   <h2 className="text-xl font-bold">Chat with Jarvis</h2>
                   <p className="mt-1 text-sm text-slate-400">Jarvis answers through mission, risk, decisions, and scope.</p>
-                </div>
-
-                <div className="hidden items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-400 sm:flex">
-                  <Lock className="h-3.5 w-3.5" /> {project.approval}
                 </div>
               </div>
 
@@ -866,27 +862,32 @@ ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") :
               )}
             </div>
 
-            <div className="sticky bottom-0 border-t border-slate-800 bg-slate-950/95 p-5 backdrop-blur">
-              <div className="flex gap-3">
-                <input
+            <div className="shrink-0 border-t border-slate-800 bg-slate-950/95 p-5 backdrop-blur">
+              <div className="flex items-end gap-3">
+                <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && send()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      send();
+                    }
+                  }}
                   placeholder="Tell Jarvis what you want to do..."
-                  className="flex-1 rounded-2xl border border-slate-800 bg-slate-900 px-4 py-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-blue-400"
+                  rows={1}
+                  className="flex-1 resize-none rounded-2xl border border-slate-800 bg-slate-900 px-4 py-4 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-blue-400"
+                  style={{ minHeight: "52px", maxHeight: "160px", overflowY: "auto" }}
+                  onInput={(e) => {
+                    const el = e.currentTarget;
+                    el.style.height = "auto";
+                    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+                  }}
                 />
-
-                <button onClick={() => send()} className="rounded-2xl bg-blue-500 px-5 py-4 font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400">
+                <button onClick={() => send()} className="shrink-0 rounded-2xl bg-blue-500 px-5 py-4 font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400">
                   <Send className="h-5 w-5" />
                 </button>
               </div>
-
-              <input
-                value={betaPassword}
-                onChange={(e) => setBetaPassword(e.target.value)}
-                placeholder="Beta password, if enabled"
-                className="mt-3 w-full rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3 text-xs text-slate-300 outline-none placeholder:text-slate-600 focus:border-slate-600"
-              />
+              <p className="mt-2 text-xs text-slate-700">Enter to send · Shift+Enter for new line</p>
             </div>
           </section>
 
@@ -894,38 +895,54 @@ ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") :
             <Section title="Status" icon={ShieldCheck}>
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Health</span>
+                  <span className="text-slate-400 shrink-0">Health</span>
                   <Pill tone={projectHealth.tone}>{projectHealth.label}</Pill>
                 </div>
 
-                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Stage</span>
-                  <Pill tone={project.progress === 0 ? "default" : project.progress < 20 ? "red" : project.progress < 60 ? "amber" : "green"}>
+                <div className="flex items-center justify-between gap-2 rounded-2xl bg-slate-900 p-3">
+                  <span className="text-slate-400 shrink-0">Stage</span>
+                  <span
+                    className={`max-w-[140px] truncate rounded-full border px-3 py-1 text-xs font-medium text-right ${
+                      project.progress === 0 ? "border-slate-700 bg-slate-900 text-slate-200" :
+                      project.progress < 20 ? "border-rose-500/30 bg-rose-500/10 text-rose-200" :
+                      project.progress < 60 ? "border-amber-500/30 bg-amber-500/10 text-amber-200" :
+                      "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                    }`}
+                    title={project.progress === 0 ? "Uninitialized" : project.status}
+                  >
                     {project.progress === 0 ? "Uninitialized" : project.status}
-                  </Pill>
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Scope</span>
+                  <span className="text-slate-400 shrink-0">Scope</span>
                   <Pill tone={project.progress === 0 ? "default" : history.length < 5 ? "amber" : "green"}>
                     {project.progress === 0 ? "Unknown" : history.length < 5 ? "Monitoring" : "Tracked"}
                   </Pill>
                 </div>
 
-                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Confidence</span>
-                  <Pill tone={project.confidence.toLowerCase().includes("unknown") ? "default" : project.confidence.toLowerCase().includes("low") ? "red" : project.confidence.toLowerCase().includes("medium") ? "amber" : "green"}>
+                <div className="flex items-center justify-between gap-2 rounded-2xl bg-slate-900 p-3">
+                  <span className="text-slate-400 shrink-0">Confidence</span>
+                  <span
+                    className={`max-w-[140px] truncate rounded-full border px-3 py-1 text-xs font-medium ${
+                      project.confidence.toLowerCase().includes("unknown") ? "border-slate-700 bg-slate-900 text-slate-200" :
+                      project.confidence.toLowerCase().includes("low") ? "border-rose-500/30 bg-rose-500/10 text-rose-200" :
+                      project.confidence.toLowerCase().includes("medium") ? "border-amber-500/30 bg-amber-500/10 text-amber-200" :
+                      "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                    }`}
+                    title={project.confidence}
+                  >
                     {project.confidence}
-                  </Pill>
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Risks</span>
+                  <span className="text-slate-400 shrink-0">Risks</span>
                   <Pill tone={project.risks.length ? "amber" : "default"}>{project.risks.length ? `${project.risks.length} identified` : "None yet"}</Pill>
                 </div>
 
                 <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
-                  <span className="text-slate-400">Progress</span>
+                  <span className="text-slate-400 shrink-0">Progress</span>
                   <Pill tone={project.progress === 0 ? "default" : project.progress < 20 ? "red" : project.progress < 60 ? "amber" : "green"}>{project.progress}%</Pill>
                 </div>
               </div>
