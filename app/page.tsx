@@ -20,7 +20,27 @@ type Message = {
   attachments?: Attachment[];
 };
 
-const APP_VERSION = "v1.9";
+const APP_VERSION = "v1.10";
+
+// ConstitutionAnalysis — mirrors the type from /api/constitution. Added v1.10.
+type ConstitutionAnalysis = {
+  missionAlignment: "high" | "medium" | "low";
+  scopeDrift: "none" | "possible" | "high";
+  evidenceLevel: "verified" | "user_reported" | "inferred" | "assumption" | "unknown";
+  governanceProfile: {
+    projectType: string;
+    riskLevel: "low" | "medium" | "high";
+    tighten: string[];
+    loosen: string[];
+  };
+  notices: {
+    missionConflict: boolean;
+    scopeWarning: boolean;
+    evidenceWarning: boolean;
+  };
+  attentionScore: number;
+  reasoning: string;
+};
 
 function makeInitialMessage(): Message {
   return {
@@ -213,6 +233,65 @@ function MessageTimestamp({ iso }: { iso: string }) {
   );
 }
 
+// NavigatorAttentionMeter — VU-style bar showing constitutional engagement. Added v1.10.
+// 5 segments, fills left-to-right based on attentionScore (0–100).
+// Shown in chat header. Hover reveals reason.
+function NavigatorAttentionMeter({ score, reason }: { score: number; reason: string }) {
+  const segments = 5;
+  const filled = Math.max(0, Math.min(segments, Math.round((score / 100) * segments)));
+
+  // Segment heights for vintage VU meter feel (ascending)
+  const heights = ["h-1.5", "h-2", "h-2.5", "h-3", "h-3.5"];
+
+  // Color based on attention level
+  const color = score >= 70 ? "bg-gray-800" : score >= 40 ? "bg-gray-500" : "bg-gray-300";
+
+  return (
+    <div className="flex flex-col items-end gap-0.5" title={reason || "Navigator Attention"}>
+      <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-400">ATTN</span>
+      <div className="flex items-end gap-0.5">
+        {Array.from({ length: segments }).map((_, i) => (
+          <div
+            key={i}
+            className={`w-1.5 rounded-sm transition-all duration-500 ${heights[i]} ${i < filled ? color : "bg-gray-100"}`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ConstitutionNotice — renders inline notices when constitutional thresholds are crossed. Added v1.10.
+// Only shown when missionConflict, scopeWarning, or evidenceWarning is true.
+function ConstitutionNotice({ analysis }: { analysis: ConstitutionAnalysis | null }) {
+  if (!analysis) return null;
+  const { notices } = analysis;
+  if (!notices.missionConflict && !notices.scopeWarning && !notices.evidenceWarning) return null;
+
+  return (
+    <div className="mb-3 space-y-1.5">
+      {notices.missionConflict && (
+        <div className="flex items-start gap-2 rounded border border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+          <span className="shrink-0 font-semibold">⚠ Mission Conflict</span>
+          <span>This proposal conflicts with the current project mission.</span>
+        </div>
+      )}
+      {notices.scopeWarning && (
+        <div className="flex items-start gap-2 rounded border border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+          <span className="shrink-0 font-semibold">⚠ Scope Drift</span>
+          <span>High scope expansion detected without clear mission advancement.</span>
+        </div>
+      )}
+      {notices.evidenceWarning && (
+        <div className="flex items-start gap-2 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+          <span className="shrink-0 font-semibold">ℹ Evidence Notice</span>
+          <span>This information is currently treated as {analysis.evidenceLevel.replace("_", " ")} and has not been independently validated.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const [project, setProject] = useState<ProjectState>(defaultProjectState);
   const [draftProject, setDraftProject] = useState<ProjectState>(defaultProjectState);
@@ -226,6 +305,8 @@ export default function Home() {
   const [editMode, setEditMode] = useState(false);
   const [lastStateUpdate, setLastStateUpdate] = useState("No project initialized yet");
   const [confirmAction, setConfirmAction] = useState<null | "clearChat" | "resetProject">(null);
+  const [constitutionAnalysis, setConstitutionAnalysis] = useState<ConstitutionAnalysis | null>(null);
+  const [lastNotices, setLastNotices] = useState<ConstitutionAnalysis | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
@@ -315,6 +396,7 @@ export default function Home() {
 
   function clearChat() {
     setHistory([makeInitialMessage()]); setMessage(""); setError("");
+    setLastNotices(null);
     localStorage.removeItem("jarvis-history-v13"); setConfirmAction(null);
   }
 
@@ -322,6 +404,7 @@ export default function Home() {
     setProject(defaultProjectState); setDraftProject(defaultProjectState);
     setHistory([makeInitialMessage()]); setMessage(""); setError("");
     setLastStateUpdate("No project initialized yet");
+    setConstitutionAnalysis(null); setLastNotices(null);
     localStorage.removeItem("jarvis-project-state-v13");
     localStorage.removeItem("jarvis-history-v13");
     setConfirmAction(null);
@@ -427,6 +510,16 @@ export default function Home() {
       if (!response.ok) throw new Error(data.error || "Request failed");
       setHistory((h) => [...h, { role: "assistant", content: data.reply, timestamp: new Date().toISOString() }]);
       if (data.project) { setProject(data.project); setDraftProject(data.project); setLastStateUpdate("Updated by Jarvis from conversation"); }
+      if (data.constitutionAnalysis) {
+        setConstitutionAnalysis(data.constitutionAnalysis);
+        // Only surface notices if any threshold is crossed
+        const a = data.constitutionAnalysis as ConstitutionAnalysis;
+        if (a.notices.missionConflict || a.notices.scopeWarning || a.notices.evidenceWarning) {
+          setLastNotices(a);
+        } else {
+          setLastNotices(null);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -584,19 +677,28 @@ export default function Home() {
             <h2 className="text-sm font-semibold text-gray-800">Chat with Jarvis</h2>
             <p className="text-xs text-gray-400">Jarvis answers through mission, risk, decisions, and scope.</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setConfirmAction("clearChat")}
-              className="flex items-center gap-1.5 rounded border border-gray-200 px-3 py-1.5 text-xs text-gray-500 transition hover:border-gray-300 hover:text-gray-700"
-            >
-              <RefreshCcw className="h-3 w-3" /> Clear Chat
-            </button>
-            <button
-              onClick={() => setConfirmAction("resetProject")}
-              className="flex items-center gap-1.5 rounded border border-gray-200 px-3 py-1.5 text-xs text-gray-500 transition hover:border-red-300 hover:text-red-500"
-            >
-              Reset Project
-            </button>
+          <div className="flex items-center gap-4">
+            {/* Navigator Attention Meter — visible when mission exists */}
+            {project.mission && constitutionAnalysis && (
+              <NavigatorAttentionMeter
+                score={constitutionAnalysis.attentionScore}
+                reason={constitutionAnalysis.reasoning}
+              />
+            )}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setConfirmAction("clearChat")}
+                className="flex items-center gap-1.5 rounded border border-gray-200 px-3 py-1.5 text-xs text-gray-500 transition hover:border-gray-300 hover:text-gray-700"
+              >
+                <RefreshCcw className="h-3 w-3" /> Clear Chat
+              </button>
+              <button
+                onClick={() => setConfirmAction("resetProject")}
+                className="flex items-center gap-1.5 rounded border border-gray-200 px-3 py-1.5 text-xs text-gray-500 transition hover:border-red-300 hover:text-red-500"
+              >
+                Reset Project
+              </button>
+            </div>
           </div>
         </header>
 
@@ -683,6 +785,9 @@ export default function Home() {
 
           {loading && <MinimalThinkingIndicator label="On it..." />}
           {orientationLoading && <MinimalThinkingIndicator label="Reviewing your project..." />}
+
+          {/* Constitution notices — shown above latest reply when thresholds crossed */}
+          {!loading && lastNotices && <ConstitutionNotice analysis={lastNotices} />}
 
           {error && (
             <div className="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">

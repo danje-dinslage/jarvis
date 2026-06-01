@@ -1,11 +1,19 @@
+// API: /api/chat
+// Main Jarvis chat endpoint. Runs constitutional analysis before Claude responds.
+// Returns: { reply, project, constitutionAnalysis }
+// Updated: v1.10 — constitution layer added
+
 import { NextRequest, NextResponse } from "next/server";
 import {
   buildJarvisSystemPrompt,
+  buildJarvisSystemPromptWithConstitution,
   buildProjectStateUpdatePrompt,
   defaultProjectState,
   normalizeProjectState,
+  type ConstitutionSignals,
   type ProjectState
 } from "@/lib/jarvis";
+import { type ConstitutionAnalysis, attentionScoreFromAnalysis } from "@/app/api/constitution/route";
 
 export const runtime = "nodejs";
 
@@ -14,7 +22,6 @@ type HistoryMessage = {
   content: string;
 };
 
-// Attachment from client — added v1.9
 type Attachment = {
   name: string;
   type: "image" | "text";
@@ -22,7 +29,7 @@ type Attachment = {
   data: string;
 };
 
-async function callAnthropic(messages: any[], system: string, maxTokens = 900) {
+async function callAnthropic(messages: any[], system: string, maxTokens = 900): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured.");
   const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
@@ -40,7 +47,7 @@ async function callAnthropic(messages: any[], system: string, maxTokens = 900) {
   const data = await response.json();
   if (!response.ok) throw new Error(data?.error?.message || "Claude request failed.");
   const text = data?.content?.[0]?.text;
-  if (typeof text !== "string") throw new Error("Claude returned an unexpected response.");
+  if (typeof text !== "string") throw new Error("Unexpected response.");
   return text;
 }
 
@@ -53,31 +60,40 @@ function parseJsonObject(text: string) {
   }
 }
 
-// buildUserContent — constructs Claude content array for a user message with optional attachments
 function buildUserContent(message: string, attachments: Attachment[]): any[] | string {
   if (!attachments.length) return message;
-
   const blocks: any[] = [];
-
-  if (message.trim()) {
-    blocks.push({ type: "text", text: message });
-  }
-
+  if (message.trim()) blocks.push({ type: "text", text: message });
   for (const att of attachments) {
     if (att.type === "image") {
-      blocks.push({
-        type: "image",
-        source: { type: "base64", media_type: att.mediaType, data: att.data }
-      });
+      blocks.push({ type: "image", source: { type: "base64", media_type: att.mediaType, data: att.data } });
     } else {
-      blocks.push({
-        type: "text",
-        text: `[Attached file: ${att.name}]\n\n${att.data}`
-      });
+      blocks.push({ type: "text", text: `[Attached file: ${att.name}]\n\n${att.data}` });
     }
   }
-
   return blocks;
+}
+
+// runConstitutionAnalysis — calls /api/constitution internally. Returns null on failure (non-fatal).
+async function runConstitutionAnalysis(
+  project: ProjectState,
+  message: string,
+  betaPassword: string,
+  baseUrl: string
+): Promise<ConstitutionAnalysis | null> {
+  if (!project.mission || !message) return null;
+  try {
+    const response = await fetch(`${baseUrl}/api/constitution`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project, message, betaPassword })
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.analysis ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -100,12 +116,30 @@ export async function POST(req: NextRequest) {
     const project: ProjectState = normalizeProjectState(body?.project || {}, defaultProjectState);
     const now = new Date().toISOString();
 
+    // Run constitutional analysis before Claude (non-blocking — failure falls through)
+    const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+    const constitutionAnalysis = await runConstitutionAnalysis(project, message, body?.betaPassword || "", baseUrl);
+
+    // Build system prompt — enriched with constitution signals if available
+    let systemPrompt: string;
+    if (constitutionAnalysis && project.mission) {
+      const signals: ConstitutionSignals = {
+        missionAlignment: constitutionAnalysis.missionAlignment,
+        scopeDrift: constitutionAnalysis.scopeDrift,
+        evidenceLevel: constitutionAnalysis.evidenceLevel,
+        governanceProfile: constitutionAnalysis.governanceProfile
+      };
+      systemPrompt = buildJarvisSystemPromptWithConstitution(project, signals);
+    } else {
+      systemPrompt = buildJarvisSystemPrompt(project);
+    }
+
     const jarvisMessages = [
       ...history.map((m) => ({ role: m.role, content: m.content })),
       { role: "user", content: buildUserContent(message, attachments) }
     ];
 
-    const reply = await callAnthropic(jarvisMessages, buildJarvisSystemPrompt(project), 1000);
+    const reply = await callAnthropic(jarvisMessages, systemPrompt, 1000);
 
     let updatedProject = project;
     try {
@@ -119,7 +153,11 @@ export async function POST(req: NextRequest) {
       updatedProject = project;
     }
 
-    return NextResponse.json({ reply, project: updatedProject });
+    return NextResponse.json({
+      reply,
+      project: updatedProject,
+      constitutionAnalysis: constitutionAnalysis ?? null
+    });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Unknown server error." },
