@@ -14,6 +14,7 @@ type Attachment = {
 };
 
 type Message = {
+  id: string;              // stable message id for flag anchoring — added v1.14.3
   role: "user" | "assistant";
   content: string;
   timestamp?: string;
@@ -25,6 +26,7 @@ const APP_VERSION = "v1.14.3";
 // Flag — user-flagged text excerpt from any message. Added v1.14.3.
 type Flag = {
   id: string;
+  messageId: string;       // references Message.id for scroll-to — added v1.14.3
   text: string;
   note: string;
   messageRole: "user" | "assistant";
@@ -54,6 +56,7 @@ type ConstitutionAnalysis = {
 
 function makeInitialMessage(): Message {
   return {
+    id: "msg-initial",
     role: "assistant",
     content: `Hello. What are we building?
 
@@ -397,11 +400,13 @@ export default function Home() {
   const [flags, setFlags] = useState<Flag[]>(() => {
     try { return JSON.parse(localStorage.getItem("jarvis-flags-v1") || "[]"); } catch { return []; }
   });
-  const [flagModal, setFlagModal] = useState<{ text: string; role: "user" | "assistant" } | null>(null);
+  const [flagModal, setFlagModal] = useState<{ text: string; role: "user" | "assistant"; messageId: string } | null>(null);
   const [flagButtonPos, setFlagButtonPos] = useState<{ x: number; y: number } | null>(null);
-  const [flagPendingSelection, setFlagPendingSelection] = useState<{ text: string; role: "user" | "assistant" } | null>(null);
+  const [flagPendingSelection, setFlagPendingSelection] = useState<{ text: string; role: "user" | "assistant"; messageId: string } | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
 
   async function fetchOrientation(loadedProject: ProjectState, loadedBetaPassword: string) {
@@ -493,6 +498,7 @@ export default function Home() {
     if (!flagModal) return;
     const newFlag: Flag = {
       id: Date.now().toString(),
+      messageId: flagModal.messageId,
       text: flagModal.text,
       note,
       messageRole: flagModal.role,
@@ -522,8 +528,8 @@ export default function Home() {
     setFlags(prev => prev.map(f => f.id === id ? { ...f, promotedTo: to } : f));
   }
 
-  // handleTextSelection — shows floating Flag button on text selection within chat. Added v1.14.3.
-  function handleTextSelection(role: "user" | "assistant") {
+  // handleTextSelection — shows floating Flag button on text selection. Updated v1.14.3.
+  function handleTextSelection(role: "user" | "assistant", messageId: string) {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !selection.toString().trim()) {
       setFlagButtonPos(null);
@@ -533,8 +539,17 @@ export default function Home() {
     const text = selection.toString().trim();
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
-    setFlagPendingSelection({ text, role });
+    setFlagPendingSelection({ text, role, messageId });
     setFlagButtonPos({ x: rect.left + rect.width / 2, y: rect.top - 8 });
+  }
+
+  // scrollToMessage — scrolls to a flagged message and briefly highlights it. Added v1.14.3.
+  function scrollToMessage(messageId: string) {
+    const el = messageRefs.current.get(messageId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedMsgId(messageId);
+    setTimeout(() => setHighlightedMsgId(null), 1800);
   }
 
   function clearChat() {
@@ -657,7 +672,7 @@ export default function Home() {
     setError(""); setMessage("");
     const attachments = [...pendingAttachments];
     setPendingAttachments([]);
-    const userMsg: Message = { role: "user", content: finalMessage, timestamp: new Date().toISOString(), attachments: attachments.length ? attachments : undefined };
+    const userMsg: Message = { id: `msg-${Date.now()}`, role: "user", content: finalMessage, timestamp: new Date().toISOString(), attachments: attachments.length ? attachments : undefined };
     setHistory((h) => [...h, userMsg]);
     setLoading(true);
     try {
@@ -668,7 +683,7 @@ export default function Home() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Request failed");
-      setHistory((h) => [...h, { role: "assistant", content: data.reply, timestamp: new Date().toISOString() }]);
+      setHistory((h) => [...h, { id: `msg-${Date.now()}`, role: "assistant", content: data.reply, timestamp: new Date().toISOString() }]);
       if (data.project) { setProject(data.project); setDraftProject(data.project); setLastStateUpdate("Updated by Jarvis from conversation"); }
       if (data.constitutionAnalysis) {
         setConstitutionAnalysis(data.constitutionAnalysis);
@@ -705,7 +720,7 @@ export default function Home() {
       {/* Floating flag button — appears on text selection */}
       {flagButtonPos && flagPendingSelection && (
         <button
-          onMouseDown={e => { e.preventDefault(); setFlagModal(flagPendingSelection); setFlagButtonPos(null); }}
+          onMouseDown={e => { e.preventDefault(); setFlagModal({ text: flagPendingSelection.text, role: flagPendingSelection.role, messageId: flagPendingSelection.messageId }); setFlagButtonPos(null); }}
           className="fixed z-40 rounded border border-gray-300 bg-white px-2 py-1 text-[11px] font-medium text-gray-600 shadow-md hover:bg-gray-50"
           style={{ left: flagButtonPos.x - 24, top: flagButtonPos.y - 28 }}
         >
@@ -838,7 +853,11 @@ export default function Home() {
             <div className="space-y-3">
               {flags.map(flag => (
                 <div key={flag.id} className={`rounded border px-3 py-2 text-xs ${flag.promotedTo ? "border-gray-100 bg-gray-50 opacity-60" : "border-gray-200 bg-white"}`}>
-                  <p className="mb-1 italic text-gray-600 line-clamp-2">"{flag.text}"</p>
+                  <p
+                    className="mb-1 italic text-gray-600 line-clamp-2 cursor-pointer hover:text-gray-800"
+                    onClick={() => scrollToMessage(flag.messageId)}
+                    title="Click to jump to message"
+                  >"{flag.text}"</p>
                   {flag.note && <p className="mb-1.5 text-gray-500">{flag.note}</p>}
                   {flag.promotedTo ? (
                     <p className="text-[10px] text-gray-400">Promoted to {flag.promotedTo}</p>
@@ -973,8 +992,10 @@ export default function Home() {
         <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {history.map((m, i) => (
             <div key={i}
-              className={`group ${m.role === "user" ? "ml-16 border-l-2 border-gray-200 pl-4" : "mr-16"}`}
-              onMouseUp={() => handleTextSelection(m.role)}
+              id={`msg-${m.id}`}
+              ref={el => { if (el) messageRefs.current.set(m.id, el); }}
+              className={`group transition-colors duration-300 ${m.role === "user" ? "ml-16 border-l-2 border-gray-200 pl-4" : "mr-16"} ${highlightedMsgId === m.id ? "bg-amber-50 -mx-2 px-2 rounded" : ""}`}
+              onMouseUp={() => handleTextSelection(m.role, m.id)}
             >
               <div className="mb-1 flex items-center gap-2">
                 <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">
