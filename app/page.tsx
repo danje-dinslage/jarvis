@@ -27,13 +27,17 @@ type Message = {
   timestamp?: string; // ISO-8601, added v1.4
 };
 
-const initialAssistantMessage: Message = {
-  role: "assistant",
-  content: `Hello. What are we building?
+const APP_VERSION = "v1.6";
+
+function makeInitialMessage(): Message {
+  return {
+    role: "assistant",
+    content: `Hello. What are we building?
 
 Tell me in plain language. I will turn the conversation into mission, risks, decisions, and the next action automatically.`,
-  timestamp: new Date().toISOString()
-};
+    timestamp: new Date().toISOString()
+  };
+}
 
 const starters = [
   "What should we do next?",
@@ -252,15 +256,16 @@ function formatAbsoluteTime(iso: string): string {
   });
 }
 
-// MessageTimestamp — relative time with absolute on hover. Added v1.5.
+// MessageTimestamp — absolute date/time + elapsed, always visible. Added v1.5, updated v1.6.
 function MessageTimestamp({ iso }: { iso: string }) {
   if (!iso) return null;
+  const abs = formatAbsoluteTime(iso);
+  const rel = formatRelativeTime(iso);
   return (
-    <span
-      className="ml-auto text-xs text-slate-600 transition hover:text-slate-400 cursor-default"
-      title={formatAbsoluteTime(iso)}
-    >
-      {formatRelativeTime(iso)}
+    <span className="ml-auto flex items-center gap-1.5 text-xs text-slate-500 font-normal">
+      <span>{abs}</span>
+      <span className="text-slate-700">•</span>
+      <span className="text-slate-600">{rel}</span>
     </span>
   );
 }
@@ -320,7 +325,7 @@ export default function Home() {
   const [project, setProject] = useState<ProjectState>(defaultProjectState);
   const [draftProject, setDraftProject] = useState<ProjectState>(defaultProjectState);
   const [message, setMessage] = useState("");
-  const [history, setHistory] = useState<Message[]>([initialAssistantMessage]);
+  const [history, setHistory] = useState<Message[]>(() => [makeInitialMessage()]);
   const [betaPassword, setBetaPassword] = useState("");
   const [exportBaseName, setExportBaseName] = useState("jarvis-project");
   const [loading, setLoading] = useState(false);
@@ -328,6 +333,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [lastStateUpdate, setLastStateUpdate] = useState("No project initialized yet");
+  const [confirmAction, setConfirmAction] = useState<null | "clearChat" | "resetProject">(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
   // Fetch orientation from /api/orient and append as assistant message
@@ -343,7 +349,7 @@ export default function Home() {
       });
       const data = await response.json();
       if (data.orientation) {
-        setHistory((h) => [...h, { role: "assistant", content: data.orientation }]);
+        setHistory((h) => [...h, { role: "assistant", content: data.orientation, timestamp: new Date().toISOString() }]);
         // Increment orientationCount in project state
         setProject((p) => ({ ...p, orientationCount: p.orientationCount + 1, lastOrientationAt: new Date().toISOString() }));
       }
@@ -452,22 +458,24 @@ export default function Home() {
     setEditMode(false);
   }
 
-  function newSession() {
-    setHistory([initialAssistantMessage]);
+  function clearChat() {
+    setHistory([makeInitialMessage()]);
     setMessage("");
     setError("");
-    localStorage.removeItem("jarvis-history-v091");
+    localStorage.removeItem("jarvis-history-v13");
+    setConfirmAction(null);
   }
 
   function resetProject() {
     setProject(defaultProjectState);
     setDraftProject(defaultProjectState);
-    setHistory([initialAssistantMessage]);
+    setHistory([makeInitialMessage()]);
     setMessage("");
     setError("");
     setLastStateUpdate("No project initialized yet");
-    localStorage.removeItem("jarvis-project-state-v091");
-    localStorage.removeItem("jarvis-history-v091");
+    localStorage.removeItem("jarvis-project-state-v13");
+    localStorage.removeItem("jarvis-history-v13");
+    setConfirmAction(null);
   }
 
   function downloadText(filename: string, content: string, mimeType: string) {
@@ -570,8 +578,8 @@ Load this project state and continue from the next action above. Treat this file
         setProject(imported);
         setDraftProject(imported);
         setLastStateUpdate("Imported from JARVIS_STATE.json");
-        // Reset history to just the initial message — orientation will follow via fetchOrientation
-        setHistory([initialAssistantMessage]);
+        // Reset history to fresh initial message — orientation will follow via fetchOrientation
+        setHistory([makeInitialMessage()]);
         setError("");
         // Trigger orientation after import
         fetchOrientation(imported, betaPassword);
@@ -654,34 +662,68 @@ ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") :
               <Sparkles className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">Jarvis</h1>
+              <div className="flex items-baseline gap-2">
+                <h1 className="text-2xl font-bold tracking-tight">Jarvis</h1>
+                <span className="text-xs font-medium text-slate-600">{APP_VERSION}</span>
+              </div>
               <p className="text-sm text-slate-400">AI chief of staff for project navigation</p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
-              onClick={newSession}
+              onClick={() => setConfirmAction("clearChat")}
               className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-medium text-slate-200 transition hover:border-blue-400 hover:text-blue-200"
-              title="Clear chat history but keep project state."
+              title="Clear conversation history. Project state is preserved."
             >
               <RefreshCcw className="h-3.5 w-3.5" />
-              New Session
+              Clear Chat
             </button>
             <button
-              onClick={resetProject}
+              onClick={() => setConfirmAction("resetProject")}
               className="inline-flex items-center gap-2 rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-200 transition hover:border-rose-400"
-              title="Clear chat and project state."
+              title="Permanently clear all project state and conversation history."
             >
               Reset Project
             </button>
             <Pill tone="green">
               <ShieldCheck className="h-3.5 w-3.5" /> Jarvis Layer Active
             </Pill>
-            <Pill tone={projectHealth.tone}>{projectHealth.label}</Pill>
             <Pill tone="blue">Claude Powered</Pill>
           </div>
         </header>
+
+        {/* Confirmation dialog — rendered inline above the grid */}
+        {confirmAction && (
+          <div className="mb-5 flex items-center justify-between rounded-3xl border border-amber-500/30 bg-amber-500/10 px-6 py-4">
+            <div>
+              <p className="text-sm font-semibold text-amber-100">
+                {confirmAction === "clearChat"
+                  ? "Clear conversation history?"
+                  : "Reset entire project?"}
+              </p>
+              <p className="mt-0.5 text-xs text-amber-200/70">
+                {confirmAction === "clearChat"
+                  ? "This will erase all messages. Project state (mission, risks, decisions) will be preserved."
+                  : "This will permanently erase all project state and conversation history. This cannot be undone."}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 ml-6 shrink-0">
+              <button
+                onClick={() => confirmAction === "clearChat" ? clearChat() : resetProject()}
+                className="rounded-full border border-amber-500/40 bg-amber-500/20 px-4 py-1.5 text-xs font-semibold text-amber-100 transition hover:bg-amber-500/30"
+              >
+                {confirmAction === "clearChat" ? "Yes, clear chat" : "Yes, reset everything"}
+              </button>
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="rounded-full border border-slate-700 bg-slate-900 px-4 py-1.5 text-xs font-medium text-slate-300 transition hover:border-slate-500"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-12 gap-5">
           <aside className="col-span-12 space-y-5 lg:col-span-3">
@@ -851,6 +893,11 @@ ${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") :
           <aside className="col-span-12 space-y-5 lg:col-span-3">
             <Section title="Status" icon={ShieldCheck}>
               <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
+                  <span className="text-slate-400">Health</span>
+                  <Pill tone={projectHealth.tone}>{projectHealth.label}</Pill>
+                </div>
+
                 <div className="flex items-center justify-between rounded-2xl bg-slate-900 p-3">
                   <span className="text-slate-400">Stage</span>
                   <Pill tone={project.progress === 0 ? "default" : project.progress < 20 ? "red" : project.progress < 60 ? "amber" : "green"}>
