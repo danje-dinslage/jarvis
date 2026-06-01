@@ -838,12 +838,22 @@ export default function Home() {
         {/* Messages */}
         <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {history.map((m, i) => (
-            <div key={i} className={`${m.role === "user" ? "ml-16 border-l-2 border-gray-200 pl-4" : "mr-16"}`}>
+            <div key={i} className={`group ${m.role === "user" ? "ml-16 border-l-2 border-gray-200 pl-4" : "mr-16"}`}>
               <div className="mb-1 flex items-center gap-2">
                 <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">
                   {m.role === "assistant" ? "Jarvis" : "You"}
                 </span>
                 {m.timestamp && <MessageTimestamp iso={m.timestamp} />}
+                {/* Copy button — Jarvis messages only, appears on hover */}
+                {m.role === "assistant" && (
+                  <button
+                    onClick={() => navigator.clipboard.writeText(m.content)}
+                    className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-gray-300 hover:text-gray-500 px-1.5 py-0.5 rounded border border-transparent hover:border-gray-200"
+                    title="Copy response"
+                  >
+                    copy
+                  </button>
+                )}
               </div>
               {/* Attachment previews */}
               {m.attachments && m.attachments.length > 0 && (
