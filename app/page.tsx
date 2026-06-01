@@ -20,7 +20,7 @@ type Message = {
   attachments?: Attachment[];
 };
 
-const APP_VERSION = "v1.14.1";
+const APP_VERSION = "v1.14.2";
 
 // ConstitutionAnalysis — mirrors the type from /api/constitution. Added v1.10.
 type ConstitutionAnalysis = {
