@@ -20,7 +20,17 @@ type Message = {
   attachments?: Attachment[];
 };
 
-const APP_VERSION = "v1.14.2";
+const APP_VERSION = "v1.14.3";
+
+// Flag — user-flagged text excerpt from any message. Added v1.14.3.
+type Flag = {
+  id: string;
+  text: string;
+  note: string;
+  messageRole: "user" | "assistant";
+  timestamp: string;
+  promotedTo?: "decision" | "risk";
+};
 
 // ConstitutionAnalysis — mirrors the type from /api/constitution. Added v1.10.
 type ConstitutionAnalysis = {
@@ -233,30 +243,23 @@ function MessageTimestamp({ iso }: { iso: string }) {
   );
 }
 
-// NavigatorAttentionMeter — analogue VU-style needle meter. Replaced v1.14.
-// SVG needle sweeps an arc from low (left) to high (right) based on attentionScore 0–100.
-// Cream face, dark needle, red zone at high end. Animates on score change.
+// NavigatorAttentionMeter — analogue VU-style needle meter. Updated v1.14.3.
+// Added "Navigator Attention" label and richer hover tooltip.
 function NavigatorAttentionMeter({ score, reason }: { score: number; reason: string }) {
-  // Needle arc: sweeps from -45deg (left, low) to +45deg (right, high) around center-bottom pivot
-  // Map score 0–100 to angle -45..+45 degrees
   const angle = -45 + (score / 100) * 90;
   const rad = (angle * Math.PI) / 180;
-
-  // Pivot point
   const cx = 44;
   const cy = 52;
   const needleLen = 32;
-
-  // Needle tip coordinates
   const nx = cx + needleLen * Math.sin(rad);
   const ny = cy - needleLen * Math.cos(rad);
-
-  // Red zone: scores >= 65 → angles >= ~13.5deg
   const isHigh = score >= 65;
   const isMed = score >= 35 && score < 65;
 
+  const tooltipText = `Navigator Attention — constitutional engagement level.\nHow actively Jarvis is applying governance to this conversation.${reason ? `\n\n${reason}` : ""}`;
+
   return (
-    <div title={reason || "Navigator Attention"} className="flex flex-col items-center gap-0.5">
+    <div className="flex flex-col items-center gap-0.5" title={tooltipText}>
       <svg
         width="88"
         height="58"
@@ -268,40 +271,28 @@ function NavigatorAttentionMeter({ score, reason }: { score: number; reason: str
         <rect x="1" y="1" width="86" height="56" rx="3" ry="3"
           fill="#f5f0e8" stroke="#888" strokeWidth="1.2" />
 
-        {/* Arc track — light grey */}
-        <path
-          d="M 14 52 A 30 30 0 0 1 74 52"
-          fill="none" stroke="#ddd" strokeWidth="2.5" strokeLinecap="round"
-        />
+        {/* Arc track */}
+        <path d="M 14 52 A 30 30 0 0 1 74 52"
+          fill="none" stroke="#ddd" strokeWidth="2.5" strokeLinecap="round" />
 
-        {/* Red zone arc — top-right segment */}
-        <path
-          d="M 62 28 A 30 30 0 0 1 74 52"
-          fill="none" stroke="#c0392b" strokeWidth="2.5" strokeLinecap="round" opacity="0.7"
-        />
+        {/* Red zone arc */}
+        <path d="M 62 28 A 30 30 0 0 1 74 52"
+          fill="none" stroke="#c0392b" strokeWidth="2.5" strokeLinecap="round" opacity="0.7" />
 
         {/* Tick marks */}
         {[-45, -22, 0, 22, 45].map((a, i) => {
           const r = (a * Math.PI) / 180;
-          const innerR = 27;
-          const outerR = 31;
-          const x1 = cx + innerR * Math.sin(r);
-          const y1 = cy - innerR * Math.cos(r);
-          const x2 = cx + outerR * Math.sin(r);
-          const y2 = cy - outerR * Math.cos(r);
-          return (
-            <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
-              stroke={i >= 3 ? "#c0392b" : "#999"} strokeWidth={i === 2 ? 1.5 : 1} />
-          );
+          const x1 = cx + 27 * Math.sin(r);
+          const y1 = cy - 27 * Math.cos(r);
+          const x2 = cx + 31 * Math.sin(r);
+          const y2 = cy - 31 * Math.cos(r);
+          return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+            stroke={i >= 3 ? "#c0392b" : "#999"} strokeWidth={i === 2 ? 1.5 : 1} />;
         })}
 
         {/* Needle */}
-        <line
-          x1={cx} y1={cy}
-          x2={nx} y2={ny}
-          stroke="#1a1a1a"
-          strokeWidth="1.5"
-          strokeLinecap="round"
+        <line x1={cx} y1={cy} x2={nx} y2={ny}
+          stroke="#1a1a1a" strokeWidth="1.5" strokeLinecap="round"
           style={{ transition: "x2 0.6s cubic-bezier(0.34,1.56,0.64,1), y2 0.6s cubic-bezier(0.34,1.56,0.64,1)" }}
         />
 
@@ -312,6 +303,10 @@ function NavigatorAttentionMeter({ score, reason }: { score: number; reason: str
         <text x="44" y="56" textAnchor="middle" fontSize="6" fill="#888"
           fontFamily="monospace" letterSpacing="1.5">ATTN</text>
       </svg>
+      {/* Navigator Attention label — always visible */}
+      <span className="text-[9px] font-medium tracking-wide text-gray-400" style={{ fontFamily: "monospace" }}>
+        Navigator Attention
+      </span>
     </div>
   );
 }
@@ -347,6 +342,36 @@ function ConstitutionNotice({ analysis }: { analysis: ConstitutionAnalysis | nul
   );
 }
 
+// FlagModal — appears when user confirms a text selection to flag. Added v1.14.3.
+function FlagModal({ selectedText, role, onSave, onCancel }: {
+  selectedText: string;
+  role: "user" | "assistant";
+  onSave: (note: string) => void;
+  onCancel: () => void;
+}) {
+  const [note, setNote] = useState("");
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" onClick={onCancel}>
+      <div className="w-full max-w-sm rounded border border-gray-200 bg-white p-5 shadow-lg" onClick={e => e.stopPropagation()}>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-gray-400">Flag excerpt</p>
+        <p className="mb-4 rounded bg-gray-50 border border-gray-200 px-3 py-2 text-sm text-gray-700 italic line-clamp-3">"{selectedText}"</p>
+        <textarea
+          autoFocus
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          placeholder="Add a note (optional)..."
+          rows={2}
+          className="w-full resize-none rounded border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-gray-400 placeholder:text-gray-300"
+        />
+        <div className="mt-3 flex justify-end gap-2">
+          <button onClick={onCancel} className="rounded border border-gray-200 px-3 py-1.5 text-xs text-gray-500 hover:border-gray-300">Cancel</button>
+          <button onClick={() => onSave(note)} className="rounded border border-gray-800 bg-gray-800 px-3 py-1.5 text-xs text-white hover:bg-gray-700">Save flag</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [project, setProject] = useState<ProjectState>(defaultProjectState);
   const [draftProject, setDraftProject] = useState<ProjectState>(defaultProjectState);
@@ -368,6 +393,13 @@ export default function Home() {
   const [memoryContent, setMemoryContent] = useState<string | null>(null);
   const [memoryConfidence, setMemoryConfidence] = useState<string | null>(null);
   const [memoryAge, setMemoryAge] = useState<string | null>(null);
+  // Flags — text excerpts flagged by the user. Added v1.14.3.
+  const [flags, setFlags] = useState<Flag[]>(() => {
+    try { return JSON.parse(localStorage.getItem("jarvis-flags-v1") || "[]"); } catch { return []; }
+  });
+  const [flagModal, setFlagModal] = useState<{ text: string; role: "user" | "assistant" } | null>(null);
+  const [flagButtonPos, setFlagButtonPos] = useState<{ x: number; y: number } | null>(null);
+  const [flagPendingSelection, setFlagPendingSelection] = useState<{ text: string; role: "user" | "assistant" } | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
@@ -427,6 +459,7 @@ export default function Home() {
   useEffect(() => { localStorage.setItem("jarvis-history-v13", JSON.stringify(history)); }, [history]);
   useEffect(() => { localStorage.setItem("jarvis-beta-password-v02", betaPassword); }, [betaPassword]);
   useEffect(() => { localStorage.setItem("jarvis-export-base-name-v12", exportBaseName); }, [exportBaseName]);
+  useEffect(() => { localStorage.setItem("jarvis-flags-v1", JSON.stringify(flags)); }, [flags]);
   useEffect(() => {
     chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: "smooth" });
   }, [history, loading, error]);
@@ -455,6 +488,55 @@ export default function Home() {
   function saveManualState() { setProject(draftProject); setEditMode(false); setLastStateUpdate("Manually corrected"); }
   function cancelManualState() { setDraftProject(project); setEditMode(false); }
 
+  // saveFlag — saves a new flag from the modal. Added v1.14.3.
+  function saveFlag(note: string) {
+    if (!flagModal) return;
+    const newFlag: Flag = {
+      id: Date.now().toString(),
+      text: flagModal.text,
+      note,
+      messageRole: flagModal.role,
+      timestamp: new Date().toISOString()
+    };
+    setFlags(prev => [newFlag, ...prev]);
+    setFlagModal(null);
+    setFlagButtonPos(null);
+    setFlagPendingSelection(null);
+  }
+
+  // deleteFlag — removes a flag by id. Added v1.14.3.
+  function deleteFlag(id: string) {
+    setFlags(prev => prev.filter(f => f.id !== id));
+  }
+
+  // promoteFlag — promotes a flag to decision or risk. Added v1.14.3.
+  function promoteFlag(id: string, to: "decision" | "risk") {
+    const flag = flags.find(f => f.id === id);
+    if (!flag) return;
+    const text = flag.note ? `${flag.text} — ${flag.note}` : flag.text;
+    if (to === "decision") {
+      setProject(p => ({ ...p, decisions: [...p.decisions.slice(-4), text] }));
+    } else {
+      setProject(p => ({ ...p, risks: [...p.risks.slice(-4), text] }));
+    }
+    setFlags(prev => prev.map(f => f.id === id ? { ...f, promotedTo: to } : f));
+  }
+
+  // handleTextSelection — shows floating Flag button on text selection within chat. Added v1.14.3.
+  function handleTextSelection(role: "user" | "assistant") {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.toString().trim()) {
+      setFlagButtonPos(null);
+      setFlagPendingSelection(null);
+      return;
+    }
+    const text = selection.toString().trim();
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    setFlagPendingSelection({ text, role });
+    setFlagButtonPos({ x: rect.left + rect.width / 2, y: rect.top - 8 });
+  }
+
   function clearChat() {
     setHistory([makeInitialMessage()]); setMessage(""); setError("");
     setLastNotices(null); setSearchUsed(false); setSearchIntent(null);
@@ -469,6 +551,7 @@ export default function Home() {
     setConstitutionAnalysis(null); setLastNotices(null);
     setSearchUsed(false); setSearchIntent(null);
     setMemoryHit(false); setMemoryContent(null); setMemoryConfidence(null); setMemoryAge(null);
+    setFlags([]); localStorage.removeItem("jarvis-flags-v1");
     localStorage.removeItem("jarvis-project-state-v13");
     localStorage.removeItem("jarvis-history-v13");
     setConfirmAction(null);
@@ -493,7 +576,7 @@ export default function Home() {
   }
 
   function exportProjectMarkdown() { downloadText(`${safeExportBaseName()}_PROJECT_STATE.md`, projectStateMarkdown(project), "text/markdown;charset=utf-8"); }
-  function exportProjectJson() { downloadText(`${safeExportBaseName()}_JARVIS_STATE.json`, JSON.stringify(project, null, 2), "application/json;charset=utf-8"); }
+  function exportProjectJson() { downloadText(`${safeExportBaseName()}_JARVIS_STATE.json`, JSON.stringify({ ...project, flags }, null, 2), "application/json;charset=utf-8"); }
 
   function importProjectJson(file: File | undefined) {
     if (!file) return;
@@ -531,6 +614,8 @@ export default function Home() {
         setProject(imported); setDraftProject(imported);
         setLastStateUpdate("Imported from JARVIS_STATE.json");
         setHistory([makeInitialMessage()]); setError("");
+        // Restore flags if present in export
+        if (Array.isArray(parsed.flags)) setFlags(parsed.flags);
         fetchOrientation(imported, betaPassword);
       } catch {
         setError("Could not import project state. Please upload a valid JARVIS_STATE.json file.");
@@ -616,6 +701,27 @@ export default function Home() {
 
   return (
     <main className="flex h-screen overflow-hidden bg-white text-gray-800">
+
+      {/* Floating flag button — appears on text selection */}
+      {flagButtonPos && flagPendingSelection && (
+        <button
+          onMouseDown={e => { e.preventDefault(); setFlagModal(flagPendingSelection); setFlagButtonPos(null); }}
+          className="fixed z-40 rounded border border-gray-300 bg-white px-2 py-1 text-[11px] font-medium text-gray-600 shadow-md hover:bg-gray-50"
+          style={{ left: flagButtonPos.x - 24, top: flagButtonPos.y - 28 }}
+        >
+          ⚑ Flag
+        </button>
+      )}
+
+      {/* Flag modal */}
+      {flagModal && (
+        <FlagModal
+          selectedText={flagModal.text}
+          role={flagModal.role}
+          onSave={saveFlag}
+          onCancel={() => { setFlagModal(null); setFlagButtonPos(null); setFlagPendingSelection(null); }}
+        />
+      )}
 
       {/* LEFT SIDEBAR */}
       <aside className="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-r border-gray-200 bg-white px-5 py-6">
@@ -719,6 +825,34 @@ export default function Home() {
           summary={project.decisions.length ? `${project.decisions.length} recorded` : "None yet"}
         >
           <SidebarList items={project.decisions} state={fieldStates.decisions} emptyText="No decisions recorded yet." />
+        </CollapsibleSection>
+
+        {/* FLAGGED — user-flagged text excerpts. Added v1.14.3. */}
+        <CollapsibleSection
+          title="Flagged"
+          summary={flags.length ? `${flags.length} item${flags.length === 1 ? "" : "s"}` : "None yet"}
+        >
+          {flags.length === 0 ? (
+            <p className="text-xs text-gray-300">Select text in any message and click Flag to save excerpts here.</p>
+          ) : (
+            <div className="space-y-3">
+              {flags.map(flag => (
+                <div key={flag.id} className={`rounded border px-3 py-2 text-xs ${flag.promotedTo ? "border-gray-100 bg-gray-50 opacity-60" : "border-gray-200 bg-white"}`}>
+                  <p className="mb-1 italic text-gray-600 line-clamp-2">"{flag.text}"</p>
+                  {flag.note && <p className="mb-1.5 text-gray-500">{flag.note}</p>}
+                  {flag.promotedTo ? (
+                    <p className="text-[10px] text-gray-400">Promoted to {flag.promotedTo}</p>
+                  ) : (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <button onClick={() => promoteFlag(flag.id, "decision")} className="rounded border border-gray-200 px-1.5 py-0.5 text-[10px] text-gray-500 hover:border-gray-400 hover:text-gray-700">→ Decision</button>
+                      <button onClick={() => promoteFlag(flag.id, "risk")} className="rounded border border-gray-200 px-1.5 py-0.5 text-[10px] text-gray-500 hover:border-gray-400 hover:text-gray-700">→ Risk</button>
+                      <button onClick={() => deleteFlag(flag.id)} className="ml-auto text-[10px] text-gray-300 hover:text-red-400">✕</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </CollapsibleSection>
 
         {/* PROJECT FILE — at bottom */}
@@ -838,7 +972,10 @@ export default function Home() {
         {/* Messages */}
         <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {history.map((m, i) => (
-            <div key={i} className={`group ${m.role === "user" ? "ml-16 border-l-2 border-gray-200 pl-4" : "mr-16"}`}>
+            <div key={i}
+              className={`group ${m.role === "user" ? "ml-16 border-l-2 border-gray-200 pl-4" : "mr-16"}`}
+              onMouseUp={() => handleTextSelection(m.role)}
+            >
               <div className="mb-1 flex items-center gap-2">
                 <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">
                   {m.role === "assistant" ? "Jarvis" : "You"}
