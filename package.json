@@ -1,6 +1,6 @@
 {
-  "name": "jarvis-web-v1.2",
-  "version": "1.2.0",
+  "name": "jarvis-web-v1.8-minimal",
+  "version": "1.8.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
