@@ -95,6 +95,51 @@ If the user asks for a handover, produce a concise handover with: Current State,
 Your goal: the user should feel they are working with Jarvis, not with Claude wearing a template.`;
 }
 
+// ConstitutionSignals — subset of analysis injected into Claude's context. Added v1.10.
+export type ConstitutionSignals = {
+  missionAlignment: "high" | "medium" | "low";
+  scopeDrift: "none" | "possible" | "high";
+  evidenceLevel: "verified" | "user_reported" | "inferred" | "assumption" | "unknown";
+  governanceProfile: {
+    projectType: string;
+    riskLevel: "low" | "medium" | "high";
+    tighten: string[];
+    loosen: string[];
+  };
+};
+
+// buildJarvisSystemPromptWithConstitution — base prompt enriched with constitutional signals. Added v1.10.
+export function buildJarvisSystemPromptWithConstitution(project: ProjectState, signals: ConstitutionSignals): string {
+  const base = buildJarvisSystemPrompt(project);
+
+  const tightenNote = signals.governanceProfile.tighten.length
+    ? `Pay particular attention to: ${signals.governanceProfile.tighten.join(", ")}.`
+    : "";
+  const loosenNote = signals.governanceProfile.loosen.length
+    ? `You can be lighter on: ${signals.governanceProfile.loosen.join(", ")}.`
+    : "";
+
+  const constitutionBlock = `
+
+--- CONSTITUTIONAL ANALYSIS (internal only — do not repeat this to the user) ---
+Mission Alignment: ${signals.missionAlignment}
+Scope Drift: ${signals.scopeDrift}
+Evidence Level: ${signals.evidenceLevel}
+Project Type: ${signals.governanceProfile.projectType}
+Risk Level: ${signals.governanceProfile.riskLevel}
+${tightenNote}
+${loosenNote}
+
+Respond accordingly:
+${signals.missionAlignment === "low" ? "- Low mission alignment detected. Push back clearly but without being preachy. Name the conflict once." : ""}
+${signals.scopeDrift === "high" ? "- High scope drift detected. Challenge this addition directly. Ask what the user wants to defer to make room for it." : signals.scopeDrift === "possible" ? "- Possible scope drift. Note the complexity cost but don't block." : ""}
+${signals.evidenceLevel === "assumption" || signals.evidenceLevel === "unknown" ? "- This claim lacks supporting evidence. Accept it provisionally but name the evidence gap." : signals.evidenceLevel === "user_reported" ? "- This is user-reported information. Accept it and treat it as provisional." : ""}
+${signals.governanceProfile.riskLevel === "high" ? "- High-risk project type. Apply more scrutiny to safety, security, and correctness claims." : ""}
+--- END CONSTITUTIONAL ANALYSIS ---`;
+
+  return base + constitutionBlock;
+}
+
 export function buildOrientationPrompt(project: ProjectState) {
   return `RETURNING_USER_ORIENTATION
 
