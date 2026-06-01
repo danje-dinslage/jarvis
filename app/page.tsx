@@ -1,16 +1,26 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Download, Edit3, RefreshCcw, Save, Send, Upload, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Edit3, Paperclip, RefreshCcw, Save, Send, Upload, X } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { defaultProjectState, type ProjectState } from "@/lib/jarvis";
+
+// Attachment — file attached to a user message. Added v1.9.
+type Attachment = {
+  name: string;
+  type: "image" | "text";
+  mediaType: string;       // e.g. "image/png", "text/plain"
+  data: string;            // base64 for images, raw text for text files
+};
 
 type Message = {
   role: "user" | "assistant";
   content: string;
   timestamp?: string;
+  attachments?: Attachment[];
 };
 
-const APP_VERSION = "v1.8";
+const APP_VERSION = "v1.9";
 
 function makeInitialMessage(): Message {
   return {
@@ -217,6 +227,8 @@ export default function Home() {
   const [lastStateUpdate, setLastStateUpdate] = useState("No project initialized yet");
   const [confirmAction, setConfirmAction] = useState<null | "clearChat" | "resetProject">(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
 
   async function fetchOrientation(loadedProject: ProjectState, loadedBetaPassword: string) {
     if (!loadedProject.mission) return;
@@ -369,18 +381,47 @@ export default function Home() {
     reader.readAsText(file);
   }
 
+  // handleFileAttach — reads selected files into Attachment objects. Added v1.9.
+  // Images → base64. Text/PDF/markdown/JSON → raw text.
+  async function handleFileAttach(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const results: Attachment[] = [];
+    for (const file of Array.from(files)) {
+      const isImage = file.type.startsWith("image/");
+      const isText = file.type.startsWith("text/") || ["application/json", "application/pdf"].includes(file.type) || file.name.endsWith(".md") || file.name.endsWith(".txt") || file.name.endsWith(".csv");
+      if (!isImage && !isText) continue; // skip unsupported types silently
+      await new Promise<void>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (isImage) {
+            const base64 = (reader.result as string).split(",")[1];
+            results.push({ name: file.name, type: "image", mediaType: file.type, data: base64 });
+          } else {
+            results.push({ name: file.name, type: "text", mediaType: file.type, data: reader.result as string });
+          }
+          resolve();
+        };
+        if (isImage) reader.readAsDataURL(file);
+        else reader.readAsText(file);
+      });
+    }
+    setPendingAttachments((prev) => [...prev, ...results]);
+  }
+
   async function send(custom?: string) {
     const finalMessage = (custom ?? message).trim();
-    if (!finalMessage || loading || orientationLoading) return;
+    if ((!finalMessage && pendingAttachments.length === 0) || loading || orientationLoading) return;
     setError(""); setMessage("");
-    const userMsg: Message = { role: "user", content: finalMessage, timestamp: new Date().toISOString() };
+    const attachments = [...pendingAttachments];
+    setPendingAttachments([]);
+    const userMsg: Message = { role: "user", content: finalMessage, timestamp: new Date().toISOString(), attachments: attachments.length ? attachments : undefined };
     setHistory((h) => [...h, userMsg]);
     setLoading(true);
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: finalMessage, history: history.filter((m) => m.role === "user" || m.role === "assistant").slice(-8), project, betaPassword })
+        body: JSON.stringify({ message: finalMessage, history: history.filter((m) => m.role === "user" || m.role === "assistant").slice(-8), project, betaPassword, attachments })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Request failed");
@@ -612,7 +653,31 @@ export default function Home() {
                 </span>
                 {m.timestamp && <MessageTimestamp iso={m.timestamp} />}
               </div>
-              <div className="whitespace-pre-wrap text-sm leading-7 text-gray-800">{m.content}</div>
+              {/* Attachment previews */}
+              {m.attachments && m.attachments.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {m.attachments.map((a, ai) => (
+                    <div key={ai} className="flex items-center gap-1.5 rounded border border-gray-200 px-2 py-1">
+                      {a.type === "image"
+                        ? <img src={`data:${a.mediaType};base64,${a.data}`} alt={a.name} className="h-16 w-16 rounded object-cover" />
+                        : <span className="text-xs text-gray-500">{a.name}</span>
+                      }
+                    </div>
+                  ))}
+                </div>
+              )}
+              {m.role === "assistant" ? (
+                <div className="prose prose-sm prose-gray max-w-none text-gray-800 leading-7
+                  [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5
+                  [&_strong]:font-semibold [&_strong]:text-gray-900
+                  [&_h1]:text-base [&_h1]:font-bold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-medium
+                  [&_code]:rounded [&_code]:bg-gray-100 [&_code]:px-1 [&_code]:text-xs [&_code]:text-gray-700
+                  [&_pre]:rounded [&_pre]:bg-gray-100 [&_pre]:p-3 [&_pre]:text-xs">
+                  <ReactMarkdown>{m.content}</ReactMarkdown>
+                </div>
+              ) : (
+                <div className="whitespace-pre-wrap text-sm leading-7 text-gray-800">{m.content}</div>
+              )}
             </div>
           ))}
 
@@ -628,7 +693,40 @@ export default function Home() {
 
         {/* Input */}
         <div className="shrink-0 border-t border-gray-200 bg-white px-6 py-4">
-          <div className="flex items-end gap-3">
+          {/* Pending attachments preview */}
+          {pendingAttachments.length > 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {pendingAttachments.map((a, i) => (
+                <div key={i} className="flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-1">
+                  {a.type === "image"
+                    ? <img src={`data:${a.mediaType};base64,${a.data}`} alt={a.name} className="h-8 w-8 rounded object-cover" />
+                    : <span className="text-xs text-gray-500">{a.name}</span>
+                  }
+                  <button onClick={() => setPendingAttachments((p) => p.filter((_, pi) => pi !== i))} className="ml-1 text-gray-300 hover:text-gray-500">
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-end gap-2">
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,text/*,.pdf,.md,.csv,.json,.txt"
+              className="hidden"
+              onChange={(e) => handleFileAttach(e.target.files)}
+            />
+            {/* Paperclip button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="shrink-0 rounded border border-gray-200 p-3 text-gray-400 transition hover:border-gray-300 hover:text-gray-600"
+              title="Attach file"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -650,7 +748,7 @@ export default function Home() {
               <Send className="h-4 w-4" />
             </button>
           </div>
-          <p className="mt-1.5 text-[10px] text-gray-300">Enter to send · Shift+Enter for new line</p>
+          <p className="mt-1.5 text-[10px] text-gray-300">Enter to send · Shift+Enter for new line · Attach images or text files</p>
         </div>
 
       </div>
