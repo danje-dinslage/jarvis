@@ -36,6 +36,11 @@ async function callAnthropic(prompt: string, maxTokens = 600): Promise<string> {
 }
 
 function buildConstitutionPrompt(project: ProjectState, userMessage: string): string {
+  // If governance profile is already persisted in state, inject it so Claude doesn't re-infer
+  const persistedGovernance = project.projectType
+    ? `Known project type: ${project.projectType}. Known risk level: ${project.governanceRiskLevel || "unknown"}.`
+    : "Project type not yet determined — infer from mission and context.";
+
   return `You are a constitutional analysis engine for a project navigation AI called Jarvis.
 
 Your job is to analyze a user message against the current project state and return a structured JSON assessment.
@@ -48,6 +53,7 @@ Risks: ${project.risks.length ? project.risks.join(", ") : "None identified"}
 Decisions: ${project.decisions.length ? project.decisions.join(", ") : "None recorded"}
 Progress: ${project.progress}%
 Confidence: ${project.confidence}
+${persistedGovernance}
 
 User message:
 "${userMessage}"
@@ -58,8 +64,8 @@ Analyze and return ONLY valid JSON with exactly this structure:
   "scopeDrift": "none|possible|high",
   "evidenceLevel": "verified|user_reported|inferred|assumption|unknown",
   "governanceProfile": {
-    "projectType": "brief description e.g. saas_product, personal_tool, children_app, ai_system, creative_project",
-    "riskLevel": "low|medium|high",
+    "projectType": "preserve known type or infer: saas_product, personal_tool, children_app, ai_system, creative_project, fintech, ecommerce",
+    "riskLevel": "preserve known level or infer: low|medium|high",
     "tighten": ["specific concerns e.g. privacy, security, child_safety"],
     "loosen": ["things that need less scrutiny e.g. documentation_burden, architecture_rigor"]
   },
@@ -75,7 +81,9 @@ Rules:
 - missionAlignment: how well does this message align with the stated mission? If no mission exists, return "high".
 - scopeDrift: does this message introduce significant complexity beyond the current phase?
 - evidenceLevel: what level of evidence does the user's claim carry?
-- governanceProfile: detect project type from context. Adapt tighten/loosen accordingly.
+- governanceProfile.projectType: if already known from state, PRESERVE it exactly. Only infer if empty.
+- governanceProfile.riskLevel: if already known from state, PRESERVE it. Only infer if empty.
+- governanceProfile.tighten/loosen: adapt each turn based on current message context.
   - Children products: tighten privacy, child_safety, content_safety
   - AI systems: tighten hallucination_risk, user_consent, audit
   - Personal prototypes: loosen documentation_burden, approval_process
@@ -136,7 +144,15 @@ export async function POST(req: NextRequest) {
       attentionScore: attentionScoreFromAnalysis(parsed)
     };
 
-    return NextResponse.json({ analysis });
+    // Return governance fields so chat route can persist them to project state
+    return NextResponse.json({
+      analysis,
+      governanceUpdate: {
+        projectType: parsed.governanceProfile.projectType,
+        governanceRiskLevel: parsed.governanceProfile.riskLevel,
+        riskDomains: Array.isArray(parsed.governanceProfile.tighten) ? parsed.governanceProfile.tighten : []
+      }
+    });
   } catch {
     return NextResponse.json({ analysis: defaultAnalysis(normalizeProjectState({}, defaultProjectState)) });
   }

@@ -20,7 +20,7 @@ type Message = {
   attachments?: Attachment[];
 };
 
-const APP_VERSION = "v1.10";
+const APP_VERSION = "v1.14.1";
 
 // ConstitutionAnalysis — mirrors the type from /api/constitution. Added v1.10.
 type ConstitutionAnalysis = {
@@ -233,30 +233,85 @@ function MessageTimestamp({ iso }: { iso: string }) {
   );
 }
 
-// NavigatorAttentionMeter — VU-style bar showing constitutional engagement. Added v1.10.
-// 5 segments, fills left-to-right based on attentionScore (0–100).
-// Shown in chat header. Hover reveals reason.
+// NavigatorAttentionMeter — analogue VU-style needle meter. Replaced v1.14.
+// SVG needle sweeps an arc from low (left) to high (right) based on attentionScore 0–100.
+// Cream face, dark needle, red zone at high end. Animates on score change.
 function NavigatorAttentionMeter({ score, reason }: { score: number; reason: string }) {
-  const segments = 5;
-  const filled = Math.max(0, Math.min(segments, Math.round((score / 100) * segments)));
+  // Needle arc: sweeps from -45deg (left, low) to +45deg (right, high) around center-bottom pivot
+  // Map score 0–100 to angle -45..+45 degrees
+  const angle = -45 + (score / 100) * 90;
+  const rad = (angle * Math.PI) / 180;
 
-  // Segment heights for vintage VU meter feel (ascending)
-  const heights = ["h-1.5", "h-2", "h-2.5", "h-3", "h-3.5"];
+  // Pivot point
+  const cx = 44;
+  const cy = 52;
+  const needleLen = 32;
 
-  // Color based on attention level
-  const color = score >= 70 ? "bg-gray-800" : score >= 40 ? "bg-gray-500" : "bg-gray-300";
+  // Needle tip coordinates
+  const nx = cx + needleLen * Math.sin(rad);
+  const ny = cy - needleLen * Math.cos(rad);
+
+  // Red zone: scores >= 65 → angles >= ~13.5deg
+  const isHigh = score >= 65;
+  const isMed = score >= 35 && score < 65;
 
   return (
-    <div className="flex flex-col items-end gap-0.5" title={reason || "Navigator Attention"}>
-      <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-400">ATTN</span>
-      <div className="flex items-end gap-0.5">
-        {Array.from({ length: segments }).map((_, i) => (
-          <div
-            key={i}
-            className={`w-1.5 rounded-sm transition-all duration-500 ${heights[i]} ${i < filled ? color : "bg-gray-100"}`}
-          />
-        ))}
-      </div>
+    <div title={reason || "Navigator Attention"} className="flex flex-col items-center gap-0.5">
+      <svg
+        width="88"
+        height="58"
+        viewBox="0 0 88 58"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ overflow: "visible" }}
+      >
+        {/* Face */}
+        <rect x="1" y="1" width="86" height="56" rx="3" ry="3"
+          fill="#f5f0e8" stroke="#888" strokeWidth="1.2" />
+
+        {/* Arc track — light grey */}
+        <path
+          d="M 14 52 A 30 30 0 0 1 74 52"
+          fill="none" stroke="#ddd" strokeWidth="2.5" strokeLinecap="round"
+        />
+
+        {/* Red zone arc — top-right segment */}
+        <path
+          d="M 62 28 A 30 30 0 0 1 74 52"
+          fill="none" stroke="#c0392b" strokeWidth="2.5" strokeLinecap="round" opacity="0.7"
+        />
+
+        {/* Tick marks */}
+        {[-45, -22, 0, 22, 45].map((a, i) => {
+          const r = (a * Math.PI) / 180;
+          const innerR = 27;
+          const outerR = 31;
+          const x1 = cx + innerR * Math.sin(r);
+          const y1 = cy - innerR * Math.cos(r);
+          const x2 = cx + outerR * Math.sin(r);
+          const y2 = cy - outerR * Math.cos(r);
+          return (
+            <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke={i >= 3 ? "#c0392b" : "#999"} strokeWidth={i === 2 ? 1.5 : 1} />
+          );
+        })}
+
+        {/* Needle */}
+        <line
+          x1={cx} y1={cy}
+          x2={nx} y2={ny}
+          stroke="#1a1a1a"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          style={{ transition: "x2 0.6s cubic-bezier(0.34,1.56,0.64,1), y2 0.6s cubic-bezier(0.34,1.56,0.64,1)" }}
+        />
+
+        {/* Pivot dot */}
+        <circle cx={cx} cy={cy} r="2.5" fill="#444" />
+
+        {/* ATTN label */}
+        <text x="44" y="56" textAnchor="middle" fontSize="6" fill="#888"
+          fontFamily="monospace" letterSpacing="1.5">ATTN</text>
+      </svg>
     </div>
   );
 }
@@ -307,6 +362,12 @@ export default function Home() {
   const [confirmAction, setConfirmAction] = useState<null | "clearChat" | "resetProject">(null);
   const [constitutionAnalysis, setConstitutionAnalysis] = useState<ConstitutionAnalysis | null>(null);
   const [lastNotices, setLastNotices] = useState<ConstitutionAnalysis | null>(null);
+  const [searchUsed, setSearchUsed] = useState(false);
+  const [searchIntent, setSearchIntent] = useState<string | null>(null);
+  const [memoryHit, setMemoryHit] = useState(false);
+  const [memoryContent, setMemoryContent] = useState<string | null>(null);
+  const [memoryConfidence, setMemoryConfidence] = useState<string | null>(null);
+  const [memoryAge, setMemoryAge] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
@@ -396,7 +457,8 @@ export default function Home() {
 
   function clearChat() {
     setHistory([makeInitialMessage()]); setMessage(""); setError("");
-    setLastNotices(null);
+    setLastNotices(null); setSearchUsed(false); setSearchIntent(null);
+    setMemoryHit(false); setMemoryContent(null); setMemoryConfidence(null); setMemoryAge(null);
     localStorage.removeItem("jarvis-history-v13"); setConfirmAction(null);
   }
 
@@ -405,6 +467,8 @@ export default function Home() {
     setHistory([makeInitialMessage()]); setMessage(""); setError("");
     setLastStateUpdate("No project initialized yet");
     setConstitutionAnalysis(null); setLastNotices(null);
+    setSearchUsed(false); setSearchIntent(null);
+    setMemoryHit(false); setMemoryContent(null); setMemoryConfidence(null); setMemoryAge(null);
     localStorage.removeItem("jarvis-project-state-v13");
     localStorage.removeItem("jarvis-history-v13");
     setConfirmAction(null);
@@ -437,6 +501,10 @@ export default function Home() {
     reader.onload = () => {
       try {
         const parsed = JSON.parse(String(reader.result || "{}"));
+        const risks = Array.isArray(parsed.risks) ? parsed.risks.map((i: unknown) => String(i || "").trim()).filter(Boolean).slice(0, 5) : [];
+        const decisions = Array.isArray(parsed.decisions) ? parsed.decisions.map((i: unknown) => String(i || "").trim()).filter(Boolean).slice(0, 5) : [];
+        const validRiskLevels = ["low", "medium", "high", ""];
+        const rawRL = String(parsed.governanceRiskLevel || "").toLowerCase();
         const imported: ProjectState = {
           mission: typeof parsed.mission === "string" ? parsed.mission : defaultProjectState.mission,
           status: typeof parsed.status === "string" ? parsed.status : defaultProjectState.status,
@@ -444,14 +512,21 @@ export default function Home() {
           approval: typeof parsed.approval === "string" ? parsed.approval : defaultProjectState.approval,
           nextAction: typeof parsed.nextAction === "string" ? parsed.nextAction : defaultProjectState.nextAction,
           progress: typeof parsed.progress === "number" && Number.isFinite(parsed.progress) ? Math.max(0, Math.min(100, Math.round(parsed.progress))) : defaultProjectState.progress,
-          risks: Array.isArray(parsed.risks) ? parsed.risks.map((i: unknown) => String(i || "").trim()).filter(Boolean).slice(0, 5) : [],
-          decisions: Array.isArray(parsed.decisions) ? parsed.decisions.map((i: unknown) => String(i || "").trim()).filter(Boolean).slice(0, 5) : [],
+          risks,
+          decisions,
           createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : defaultProjectState.createdAt,
           updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : defaultProjectState.updatedAt,
           lastRiskUpdate: typeof parsed.lastRiskUpdate === "string" ? parsed.lastRiskUpdate : defaultProjectState.lastRiskUpdate,
           lastDecisionUpdate: typeof parsed.lastDecisionUpdate === "string" ? parsed.lastDecisionUpdate : defaultProjectState.lastDecisionUpdate,
           lastOrientationAt: typeof parsed.lastOrientationAt === "string" ? parsed.lastOrientationAt : defaultProjectState.lastOrientationAt,
-          orientationCount: typeof parsed.orientationCount === "number" ? parsed.orientationCount : defaultProjectState.orientationCount
+          orientationCount: typeof parsed.orientationCount === "number" ? parsed.orientationCount : defaultProjectState.orientationCount,
+          // Governance profile — v1.12
+          projectType: typeof parsed.projectType === "string" ? parsed.projectType : "",
+          governanceRiskLevel: validRiskLevels.includes(rawRL) ? rawRL as ProjectState["governanceRiskLevel"] : "",
+          riskDomains: Array.isArray(parsed.riskDomains) ? parsed.riskDomains.map((d: unknown) => String(d || "").trim()).filter(Boolean) : [],
+          // Evidence annotations — v1.12
+          riskEvidence: Array.isArray(parsed.riskEvidence) ? parsed.riskEvidence.map((e: unknown) => String(e || "")).slice(0, risks.length) : risks.map(() => ""),
+          decisionEvidence: Array.isArray(parsed.decisionEvidence) ? parsed.decisionEvidence.map((e: unknown) => String(e || "")).slice(0, decisions.length) : decisions.map(() => "")
         };
         setProject(imported); setDraftProject(imported);
         setLastStateUpdate("Imported from JARVIS_STATE.json");
@@ -520,6 +595,12 @@ export default function Home() {
           setLastNotices(null);
         }
       }
+      setSearchUsed(!!data.searchUsed);
+      setSearchIntent(data.searchIntent || null);
+      setMemoryHit(!!data.memoryHit);
+      setMemoryContent(data.memoryContent || null);
+      setMemoryConfidence(data.memoryConfidence || null);
+      setMemoryAge(data.memoryAge || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -684,6 +765,15 @@ export default function Home() {
                 score={constitutionAnalysis.attentionScore}
                 reason={constitutionAnalysis.reasoning}
               />
+            )}
+            {/* Search indicator — shown briefly after search was used */}
+            {searchUsed && searchIntent && searchIntent !== "none" && (
+              <span
+                className="text-[9px] font-semibold uppercase tracking-widest text-gray-400"
+                title={`Web search used · intent: ${searchIntent}`}
+              >
+                ⌕ {searchIntent}
+              </span>
             )}
             <div className="flex items-center gap-2">
               <button

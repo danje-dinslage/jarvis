@@ -14,6 +14,13 @@ export type ProjectState = {
   lastDecisionUpdate: string;
   lastOrientationAt: string;
   orientationCount: number;
+  // Governance profile — added v1.12 (persisted, set on first detection)
+  projectType: string;
+  governanceRiskLevel: "low" | "medium" | "high" | "";
+  riskDomains: string[];  // e.g. ["privacy", "child_safety", "financial"] — added v1.14
+  // Evidence annotations — added v1.12 (optional per-item evidence level)
+  riskEvidence: string[];     // parallel to risks[], "" means unknown
+  decisionEvidence: string[]; // parallel to decisions[], "" means unknown
 };
 
 export const defaultProjectState: ProjectState = {
@@ -31,7 +38,14 @@ export const defaultProjectState: ProjectState = {
   lastRiskUpdate: "",
   lastDecisionUpdate: "",
   lastOrientationAt: "",
-  orientationCount: 0
+  orientationCount: 0,
+  // Governance profile — added v1.12
+  projectType: "",
+  governanceRiskLevel: "",
+  riskDomains: [],        // added v1.14
+  // Evidence annotations — added v1.12
+  riskEvidence: [],
+  decisionEvidence: []
 };
 
 export function buildJarvisSystemPrompt(project: ProjectState) {
@@ -197,6 +211,12 @@ Timestamp rules:
 - If the decisions array changed, set lastDecisionUpdate to the current timestamp. Otherwise preserve existing value.
 - Never fabricate timestamps. Use only the provided current timestamp.
 - Preserve lastOrientationAt and orientationCount unchanged — those are managed by the client.
+- Governance: if projectType is empty, infer it from the mission and conversation (e.g. saas_product, personal_tool, children_app, ai_system, creative_project, fintech, ecommerce). Once set, preserve it unless the project fundamentally changes.
+- Governance: if governanceRiskLevel is empty, infer it (low/medium/high) based on project type and risks. Preserve once set.
+- Governance: riskDomains should list specific active risk categories relevant to this project. Examples: privacy, child_safety, financial, security, reputational, regulatory, hallucination_risk, data_retention, accessibility. Update as new risks emerge. Do not reset existing domains.
+- Evidence: riskEvidence must be the same length as risks. For each risk, classify evidence as: "verified" (confirmed by external data or user testing), "user_reported" (user stated it), "inferred" (Jarvis deduced it), "assumption" (unverified belief), or "" (unknown).
+- Evidence: decisionEvidence must be the same length as decisions. Same classification.
+- Never leave riskEvidence or decisionEvidence shorter than their corresponding arrays.
 
 Use calibrated trust:
 - User statements may update state as user-reported information.
@@ -235,7 +255,12 @@ Return ONLY valid JSON with exactly this shape:
   "lastRiskUpdate": "string",
   "lastDecisionUpdate": "string",
   "lastOrientationAt": "string",
-  "orientationCount": 0
+  "orientationCount": 0,
+  "projectType": "string",
+  "governanceRiskLevel": "low|medium|high|",
+  "riskDomains": ["privacy|child_safety|financial|security|reputational|regulatory|hallucination_risk|data_retention|..."],
+  "riskEvidence": ["verified|user_reported|inferred|assumption|unknown|"],
+  "decisionEvidence": ["verified|user_reported|inferred|assumption|unknown|"]
 }`;
 }
 
@@ -248,8 +273,25 @@ export function normalizeProjectState(input: any, fallback: ProjectState): Proje
       .slice(0, 5);
   };
 
+  const cleanEvidenceArray = (value: unknown, risks: string[]) => {
+    if (!Array.isArray(value)) return risks.map(() => "");
+    const arr = value.map((item) => String(item || "").trim());
+    // Pad or trim to match risks length
+    while (arr.length < risks.length) arr.push("");
+    return arr.slice(0, risks.length);
+  };
+
   const cleanString = (value: unknown, fallbackValue: string) =>
     typeof value === "string" && value.trim() ? value.trim() : fallbackValue;
+
+  const validRiskLevels = ["low", "medium", "high", ""];
+  const rawRiskLevel = String(input?.governanceRiskLevel || "").trim().toLowerCase();
+  const governanceRiskLevel = validRiskLevels.includes(rawRiskLevel)
+    ? rawRiskLevel as ProjectState["governanceRiskLevel"]
+    : fallback.governanceRiskLevel;
+
+  const risks = cleanArray(input?.risks, fallback.risks);
+  const decisions = cleanArray(input?.decisions, fallback.decisions);
 
   return {
     mission: cleanString(input?.mission, fallback.mission),
@@ -258,14 +300,23 @@ export function normalizeProjectState(input: any, fallback: ProjectState): Proje
     approval: cleanString(input?.approval, fallback.approval),
     nextAction: cleanString(input?.nextAction, fallback.nextAction),
     progress: typeof input?.progress === "number" && Number.isFinite(input.progress) ? Math.max(0, Math.min(100, Math.round(input.progress))) : fallback.progress,
-    risks: cleanArray(input?.risks, fallback.risks),
-    decisions: cleanArray(input?.decisions, fallback.decisions),
-    // Project Clock — added v1.3
+    risks,
+    decisions,
+    // Project Clock
     createdAt: cleanString(input?.createdAt, fallback.createdAt),
     updatedAt: cleanString(input?.updatedAt, fallback.updatedAt),
     lastRiskUpdate: cleanString(input?.lastRiskUpdate, fallback.lastRiskUpdate),
     lastDecisionUpdate: cleanString(input?.lastDecisionUpdate, fallback.lastDecisionUpdate),
     lastOrientationAt: cleanString(input?.lastOrientationAt, fallback.lastOrientationAt),
-    orientationCount: typeof input?.orientationCount === "number" && Number.isFinite(input.orientationCount) ? Math.max(0, Math.round(input.orientationCount)) : fallback.orientationCount
+    orientationCount: typeof input?.orientationCount === "number" && Number.isFinite(input.orientationCount) ? Math.max(0, Math.round(input.orientationCount)) : fallback.orientationCount,
+    // Governance profile — added v1.12. Preserve existing value if new one empty.
+    projectType: cleanString(input?.projectType, fallback.projectType),
+    governanceRiskLevel: governanceRiskLevel || fallback.governanceRiskLevel,
+    riskDomains: Array.isArray(input?.riskDomains)
+      ? input.riskDomains.map((d: unknown) => String(d || "").trim()).filter(Boolean)
+      : fallback.riskDomains,
+    // Evidence annotations — added v1.12
+    riskEvidence: cleanEvidenceArray(input?.riskEvidence, risks),
+    decisionEvidence: cleanEvidenceArray(input?.decisionEvidence, decisions)
   };
 }
