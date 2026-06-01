@@ -21,7 +21,7 @@ type Message = {
   attachments?: Attachment[];
 };
 
-const APP_VERSION = "v1.14.3";
+const APP_VERSION = "v1.14.4";
 
 // Flag — user-flagged text excerpt from any message. Added v1.14.3.
 type Flag = {

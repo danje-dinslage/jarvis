@@ -1,38 +1,17 @@
 // API: /api/constitution
 // Runs constitutional analysis on a user message before Claude responds.
 // Returns structured signals used to inform Claude and drive the Navigator Attention Meter.
-// Does NOT block or reject requests. Added: v1.10
+// Does NOT block or reject requests. Added: v1.10. Updated v1.14.4 — uses shared callAnthropicText.
 
 import { NextRequest, NextResponse } from "next/server";
 import { defaultProjectState, normalizeProjectState, type ProjectState } from "@/lib/jarvis";
 import { type ConstitutionAnalysis, attentionScoreFromAnalysis } from "@/lib/constitution";
+import { callAnthropicText } from "@/lib/api";
 
 export const runtime = "nodejs";
 
 async function callAnthropic(prompt: string, maxTokens = 600): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured.");
-  const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
-
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      messages: [{ role: "user", content: prompt }]
-    })
-  });
-
-  const data = await response.json();
-  if (!response.ok) throw new Error(data?.error?.message || "Claude request failed.");
-  const text = data?.content?.[0]?.text;
-  if (typeof text !== "string") throw new Error("Unexpected response.");
-  return text;
+  return callAnthropicText([{ role: "user", content: prompt }], "You are a constitutional analysis engine. Return only valid JSON.", maxTokens);
 }
 
 function buildConstitutionPrompt(project: ProjectState, userMessage: string): string {

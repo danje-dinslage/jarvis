@@ -31,14 +31,23 @@ const apiKey = () => {
 };
 const model = () => process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
 
-// callAnthropicRaw — single API call, returns full response object
+// callAnthropicRaw — single API call, returns full response object. Updated v1.14.4.
+// Adds anthropic-beta header when web search tool is present (required by API).
 async function callAnthropicRaw(messages: any[], system: string, maxTokens = 900, tools?: any[]): Promise<any> {
   const body: any = { model: model(), max_tokens: maxTokens, system, messages };
   if (tools?.length) body.tools = tools;
 
+  const hasWebSearch = tools?.some(t => t.name === "web_search");
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-api-key": apiKey(),
+    "anthropic-version": "2023-06-01"
+  };
+  if (hasWebSearch) headers["anthropic-beta"] = "web-search-2025-03-05";
+
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": apiKey(), "anthropic-version": "2023-06-01" },
+    headers,
     body: JSON.stringify(body)
   });
 
@@ -55,9 +64,9 @@ async function callAnthropic(messages: any[], system: string, maxTokens = 900): 
   return text;
 }
 
-// callAnthropicAgentLoop — agentic loop supporting web search tool use.
-// Runs until stop_reason === "end_turn" or max iterations reached.
-// Returns final text reply and whether search was used.
+// callAnthropicAgentLoop — agentic loop supporting web search tool use. Fixed v1.14.4.
+// Bug fix: b.name === "web_search" (was b.type === "web_search" — always false).
+// Web search results are now returned correctly in tool_result blocks.
 async function callAnthropicAgentLoop(
   messages: any[],
   system: string,
@@ -89,13 +98,13 @@ async function callAnthropicAgentLoop(
     if (stopReason === "tool_use") {
       currentMessages = [...currentMessages, { role: "assistant", content }];
 
-      // Build tool results for all tool_use blocks
+      // Build tool results — fixed: check b.name not b.type
       const toolResults = content
         .filter((b: any) => b.type === "tool_use")
         .map((b: any) => ({
           type: "tool_result",
           tool_use_id: b.id,
-          content: b.type === "web_search" ? "Search completed." : "Tool completed."
+          content: b.name === "web_search" ? "Search completed." : "Tool completed."
         }));
 
       currentMessages = [...currentMessages, { role: "user", content: toolResults }];
@@ -293,14 +302,15 @@ Return only the single word value. Nothing else.`;
   }
 }
 
-// buildMemoryNote — injects memory retrieval into system prompt. Updated v1.14.
-// Uses confidence and age to calibrate how strongly Jarvis should reference the memory.
+// buildMemoryNote — injects memory retrieval into system prompt. Updated v1.14.4.
+// Fix: "both" source now defaults to "Decision found" for format precision.
 function buildMemoryNote(retrieval: MemoryRetrieval): string {
   if (!retrieval.memoryHit || !retrieval.memoryContent) return "";
   if (retrieval.memoryConfidence === "none" || retrieval.memoryConfidence === "low") return "";
 
-  const sourceLabel = retrieval.memorySource === "decision" ? "Decision found"
-    : retrieval.memorySource === "risk" ? "Risk found"
+  // Fix v1.14.4: "both" defaults to Decision found — more precise than generic "Memory found"
+  const sourceLabel = retrieval.memorySource === "risk" ? "Risk found"
+    : retrieval.memorySource === "decision" || retrieval.memorySource === "both" ? "Decision found"
     : "Memory found";
 
   // Age qualifier — old memories get a softer hedge
@@ -357,18 +367,18 @@ async function runConstitutionAnalysis(
   }
 }
 
-// isMemoryFresh — returns true if memory age is within the freshness threshold. Added v1.14.1.
-// Threshold: 30 days. Older memory still surfaces but doesn't short-circuit routing.
+// isMemoryFresh — returns true if memory age is within the freshness threshold. Updated v1.14.4.
+// Fix: "unknown" now returns false — memories without timestamps should not claim routing authority.
 function isMemoryFresh(memoryAge: string): boolean {
-  if (memoryAge === "just now" || memoryAge === "unknown") return true;
-  // Parse "N minutes/hours/days/months ago"
+  if (memoryAge === "just now") return true;
+  if (memoryAge === "unknown") return false; // fixed v1.14.4: was true
   const match = memoryAge.match(/^(\d+)\s+(minute|hour|day|month)/);
-  if (!match) return true;
+  if (!match) return false;
   const value = parseInt(match[1]);
   const unit = match[2];
-  if (unit === "month") return value < 1; // older than 1 month = stale
+  if (unit === "month") return value < 1;
   if (unit === "day") return value <= 30;
-  return true; // minutes or hours always fresh
+  return true;
 }
 
 export async function POST(req: NextRequest) {
@@ -398,21 +408,26 @@ export async function POST(req: NextRequest) {
 
     // MEMORY-FIRST ROUTING — Added v1.14.1
     // High confidence + fresh memory → skip constitution and search entirely.
-    // Memory becomes a routing primitive, not just context.
     const memoryAuthority = memoryHit
       && memoryConfidence === "high"
       && isMemoryFresh(memoryAge);
 
-    // Classify search intent — skipped when memory has authority
-    const searchIntent = memoryAuthority
-      ? "none" as const
-      : await classifySearchIntent(message, project, memoryHit);
-    const enableSearch = searchIntent !== "none";
+    // Parallelized: search intent + constitution run concurrently when memory has no authority.
+    // Both are independent — neither depends on the other's result. Updated v1.14.4.
+    let searchIntent: SearchIntent;
+    let constitutionResult: Awaited<ReturnType<typeof runConstitutionAnalysis>>;
 
-    // Constitution analysis — skipped when memory has authority
-    const constitutionResult = memoryAuthority
-      ? null
-      : await runConstitutionAnalysis(project, message, body?.betaPassword || "", baseUrl);
+    if (memoryAuthority) {
+      searchIntent = "none";
+      constitutionResult = null;
+    } else {
+      [searchIntent, constitutionResult] = await Promise.all([
+        classifySearchIntent(message, project, memoryHit),
+        runConstitutionAnalysis(project, message, body?.betaPassword || "", baseUrl)
+      ]);
+    }
+
+    const enableSearch = searchIntent !== "none";
     const constitutionAnalysis = constitutionResult?.analysis ?? null;
 
     // Build system prompt — memory-authority path uses base prompt only

@@ -2,7 +2,7 @@
 // Generates a returning-user orientation from project state.
 // Called on project load (import or localStorage resume) when project is initialized.
 // Returns: { orientation: string }
-// Added: v1.3
+// Added: v1.3. Updated v1.14.4 — uses shared callAnthropicText.
 
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -10,36 +10,12 @@ import {
   defaultProjectState,
   normalizeProjectState
 } from "@/lib/jarvis";
+import { callAnthropicText } from "@/lib/api";
 
 export const runtime = "nodejs";
 
 async function callAnthropic(prompt: string, maxTokens = 400) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured.");
-
-  const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514";
-
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      messages: [{ role: "user", content: prompt }]
-    })
-  });
-
-  const data = await response.json();
-  if (!response.ok) throw new Error(data?.error?.message || "Claude request failed.");
-
-  const text = data?.content?.[0]?.text;
-  if (typeof text !== "string") throw new Error("Claude returned an unexpected response.");
-
-  return text;
+  return callAnthropicText([{ role: "user", content: prompt }], "You are Jarvis, an AI project navigator.", maxTokens);
 }
 
 export async function POST(req: NextRequest) {
