@@ -209,7 +209,7 @@ Progress: ${project.progress}%
 Risks:
 ${project.risks.length ? project.risks.map((r) => `- ${r}`).join("\n") : "- None identified"}
 Decisions:
-${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") : "- None recorded"}
+${project.decisions.length ? project.decisions.map((d) => `- ${d.text}`).join("\n") : "- None recorded"}
 Next action: ${project.nextAction}
 Project clock:
 Created: ${project.createdAt || "Unknown"}
