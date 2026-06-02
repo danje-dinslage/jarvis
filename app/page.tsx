@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Download, Edit3, Paperclip, RefreshCcw, Save, Send, Upload, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { defaultProjectState, type ProjectState } from "@/lib/jarvis";
+import { defaultProjectState, normalizeProjectState, type Decision, type ProjectState } from "@/lib/jarvis";
 
 // Attachment — file attached to a user message. Added v1.9.
 type Attachment = {
@@ -21,7 +21,7 @@ type Message = {
   attachments?: Attachment[];
 };
 
-const APP_VERSION = "v1.14.4";
+const APP_VERSION = "v1.15";
 
 // Flag — user-flagged text excerpt from any message. Added v1.14.3.
 type Flag = {
@@ -375,6 +375,38 @@ function FlagModal({ selectedText, role, onSave, onCancel }: {
   );
 }
 
+// DecisionList — rich decision display for sidebar. Added v1.15.
+function DecisionList({ decisions, emptyText }: { decisions: Decision[]; emptyText: string }) {
+  const [expanded, setExpanded] = React.useState<string | null>(null);
+  if (!decisions.length) return <p className="text-xs text-gray-300">{emptyText}</p>;
+  return (
+    <div className="space-y-2">
+      {decisions.map(d => (
+        <div key={d.id} className="rounded border border-gray-100 bg-gray-50">
+          <button
+            className="w-full text-left px-2.5 py-2 flex items-start justify-between gap-2"
+            onClick={() => setExpanded(expanded === d.id ? null : d.id)}
+          >
+            <span className="text-xs text-gray-700 leading-snug flex-1">{d.text}</span>
+            <span className="text-[9px] text-gray-300 shrink-0 mt-0.5">{expanded === d.id ? "▲" : "▼"}</span>
+          </button>
+          {expanded === d.id && (
+            <div className="px-2.5 pb-2 space-y-1 border-t border-gray-100 pt-1.5">
+              {d.reasoning && <p className="text-[11px] text-gray-500"><span className="font-medium text-gray-400">Why:</span> {d.reasoning}</p>}
+              {d.alternatives && <p className="text-[11px] text-gray-500"><span className="font-medium text-gray-400">Considered:</span> {d.alternatives}</p>}
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`text-[9px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded ${d.confidence === "high" ? "bg-green-50 text-green-600" : d.confidence === "low" ? "bg-red-50 text-red-500" : "bg-gray-100 text-gray-400"}`}>{d.confidence}</span>
+                <span className="text-[9px] text-gray-300">{d.source}</span>
+                {d.createdAt && <span className="text-[9px] text-gray-300 ml-auto">{new Date(d.createdAt).toLocaleDateString()}</span>}
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Home() {
   const [project, setProject] = useState<ProjectState>(defaultProjectState);
   const [draftProject, setDraftProject] = useState<ProjectState>(defaultProjectState);
@@ -476,7 +508,7 @@ export default function Home() {
     confidence: fieldStateFromText(project.confidence),
     approval: fieldStateFromText(project.approval),
     risks: fieldStateFromList(project.risks),
-    decisions: fieldStateFromList(project.decisions)
+    decisions: fieldStateFromList(project.decisions.map(d => d.text))
   }), [project]);
 
   const projectHealth = useMemo(() => {
@@ -487,7 +519,18 @@ export default function Home() {
   }, [project]);
 
   function updateDraftArrayField(field: "risks" | "decisions", text: string) {
-    setDraftProject((p) => ({ ...p, [field]: text.split("\n").map((x) => x.trim()).filter(Boolean) }));
+    if (field === "decisions") {
+      const texts = text.split("\n").map(x => x.trim()).filter(Boolean);
+      // Preserve existing Decision objects where text matches, create new ones otherwise
+      const existing = draftProject.decisions;
+      const updated: Decision[] = texts.map(t => {
+        const found = existing.find(d => d.text === t);
+        return found || { id: `manual-${Date.now()}-${Math.random().toString(36).slice(2)}`, text: t, confidence: "medium" as const, createdAt: new Date().toISOString(), source: "user" as const };
+      });
+      setDraftProject(p => ({ ...p, decisions: updated }));
+    } else {
+      setDraftProject(p => ({ ...p, [field]: text.split("\n").map(x => x.trim()).filter(Boolean) }));
+    }
   }
 
   function saveManualState() { setProject(draftProject); setEditMode(false); setLastStateUpdate("Manually corrected"); }
@@ -521,7 +564,14 @@ export default function Home() {
     if (!flag) return;
     const text = flag.note ? `${flag.text} — ${flag.note}` : flag.text;
     if (to === "decision") {
-      setProject(p => ({ ...p, decisions: [...p.decisions.slice(-4), text] }));
+      const newDecision: Decision = {
+        id: `promoted-${Date.now()}`,
+        text,
+        confidence: "medium",
+        createdAt: new Date().toISOString(),
+        source: "promoted"
+      };
+      setProject(p => ({ ...p, decisions: [...p.decisions.slice(-4), newDecision] }));
     } else {
       setProject(p => ({ ...p, risks: [...p.risks.slice(-4), text] }));
     }
@@ -550,6 +600,18 @@ export default function Home() {
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     setHighlightedMsgId(messageId);
     setTimeout(() => setHighlightedMsgId(null), 1800);
+  }
+
+  // promoteToDecision — promotes selected text from a Jarvis message to a Decision. Added v1.15.
+  function promoteToDecision(text: string) {
+    const newDecision: Decision = {
+      id: `promoted-msg-${Date.now()}`,
+      text: text.trim(),
+      confidence: "medium",
+      createdAt: new Date().toISOString(),
+      source: "promoted"
+    };
+    setProject(p => ({ ...p, decisions: [...p.decisions.slice(-4), newDecision] }));
   }
 
   function clearChat() {
@@ -582,7 +644,7 @@ export default function Home() {
   }
 
   function projectStateMarkdown(state: ProjectState) {
-    return `# PROJECT_STATE\n\nGenerated by Jarvis.\n\n## Mission\n\n${state.mission || "Not initialized"}\n\n## Status\n\n${state.status || "Unknown"}\n\n## Confidence\n\n${state.confidence || "Unknown"}\n\n## Approval\n\n${state.approval || "Not established"}\n\n## Progress\n\n${state.progress || 0}%\n\n## Next Action\n\n${state.nextAction || "Not defined"}\n\n## Risks\n\n${state.risks.length ? state.risks.map((r) => `- ${r}`).join("\n") : "- None identified"}\n\n## Decisions\n\n${state.decisions.length ? state.decisions.map((d) => `- ${d}`).join("\n") : "- None recorded"}\n\n## Resume Prompt\n\nLoad this project state and continue from the next action above. Treat this file as user-provided project context, not independently verified evidence.\n`;
+    return `# PROJECT_STATE\n\nGenerated by Jarvis.\n\n## Mission\n\n${state.mission || "Not initialized"}\n\n## Status\n\n${state.status || "Unknown"}\n\n## Confidence\n\n${state.confidence || "Unknown"}\n\n## Approval\n\n${state.approval || "Not established"}\n\n## Progress\n\n${state.progress || 0}%\n\n## Next Action\n\n${state.nextAction || "Not defined"}\n\n## Risks\n\n${state.risks.length ? state.risks.map((r) => `- ${r}`).join("\n") : "- None identified"}\n\n## Decisions\n\n${state.decisions.length ? state.decisions.map((d) => `- ${d.text}`).join("\n") : "- None recorded"}\n\n## Resume Prompt\n\nLoad this project state and continue from the next action above. Treat this file as user-provided project context, not independently verified evidence.\n`;
   }
 
   function safeExportBaseName() {
@@ -599,37 +661,11 @@ export default function Home() {
     reader.onload = () => {
       try {
         const parsed = JSON.parse(String(reader.result || "{}"));
-        const risks = Array.isArray(parsed.risks) ? parsed.risks.map((i: unknown) => String(i || "").trim()).filter(Boolean).slice(0, 5) : [];
-        const decisions = Array.isArray(parsed.decisions) ? parsed.decisions.map((i: unknown) => String(i || "").trim()).filter(Boolean).slice(0, 5) : [];
-        const validRiskLevels = ["low", "medium", "high", ""];
-        const rawRL = String(parsed.governanceRiskLevel || "").toLowerCase();
-        const imported: ProjectState = {
-          mission: typeof parsed.mission === "string" ? parsed.mission : defaultProjectState.mission,
-          status: typeof parsed.status === "string" ? parsed.status : defaultProjectState.status,
-          confidence: typeof parsed.confidence === "string" ? parsed.confidence : defaultProjectState.confidence,
-          approval: typeof parsed.approval === "string" ? parsed.approval : defaultProjectState.approval,
-          nextAction: typeof parsed.nextAction === "string" ? parsed.nextAction : defaultProjectState.nextAction,
-          progress: typeof parsed.progress === "number" && Number.isFinite(parsed.progress) ? Math.max(0, Math.min(100, Math.round(parsed.progress))) : defaultProjectState.progress,
-          risks,
-          decisions,
-          createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : defaultProjectState.createdAt,
-          updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : defaultProjectState.updatedAt,
-          lastRiskUpdate: typeof parsed.lastRiskUpdate === "string" ? parsed.lastRiskUpdate : defaultProjectState.lastRiskUpdate,
-          lastDecisionUpdate: typeof parsed.lastDecisionUpdate === "string" ? parsed.lastDecisionUpdate : defaultProjectState.lastDecisionUpdate,
-          lastOrientationAt: typeof parsed.lastOrientationAt === "string" ? parsed.lastOrientationAt : defaultProjectState.lastOrientationAt,
-          orientationCount: typeof parsed.orientationCount === "number" ? parsed.orientationCount : defaultProjectState.orientationCount,
-          // Governance profile — v1.12
-          projectType: typeof parsed.projectType === "string" ? parsed.projectType : "",
-          governanceRiskLevel: validRiskLevels.includes(rawRL) ? rawRL as ProjectState["governanceRiskLevel"] : "",
-          riskDomains: Array.isArray(parsed.riskDomains) ? parsed.riskDomains.map((d: unknown) => String(d || "").trim()).filter(Boolean) : [],
-          // Evidence annotations — v1.12
-          riskEvidence: Array.isArray(parsed.riskEvidence) ? parsed.riskEvidence.map((e: unknown) => String(e || "")).slice(0, risks.length) : risks.map(() => ""),
-          decisionEvidence: Array.isArray(parsed.decisionEvidence) ? parsed.decisionEvidence.map((e: unknown) => String(e || "")).slice(0, decisions.length) : decisions.map(() => "")
-        };
+        // Use normalizeProjectState for full migration — handles string[] → Decision[] automatically
+        const imported = normalizeProjectState(parsed, defaultProjectState);
         setProject(imported); setDraftProject(imported);
         setLastStateUpdate("Imported from JARVIS_STATE.json");
         setHistory([makeInitialMessage()]); setError("");
-        // Restore flags if present in export
         if (Array.isArray(parsed.flags)) setFlags(parsed.flags);
         fetchOrientation(imported, betaPassword);
       } catch {
@@ -709,7 +745,7 @@ export default function Home() {
   }
 
   function copyState() {
-    navigator.clipboard.writeText(`JARVIS PROJECT STATE\n\nMission:\n${project.mission || "Not initialized"}\n\nStatus: ${project.status}\nConfidence: ${project.confidence}\nApproval: ${project.approval}\nProgress: ${project.progress}%\n\nNext Action:\n${project.nextAction}\n\nRisks:\n${project.risks.length ? project.risks.map((r) => `- ${r}`).join("\n") : "- None identified"}\n\nDecisions:\n${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") : "- None recorded"}`);
+    navigator.clipboard.writeText(`JARVIS PROJECT STATE\n\nMission:\n${project.mission || "Not initialized"}\n\nStatus: ${project.status}\nConfidence: ${project.confidence}\nApproval: ${project.approval}\nProgress: ${project.progress}%\n\nNext Action:\n${project.nextAction}\n\nRisks:\n${project.risks.length ? project.risks.map((r) => `- ${r}`).join("\n") : "- None identified"}\n\nDecisions:\n${project.decisions.length ? project.decisions.map((d) => `- ${d.text}`).join("\n") : "- None recorded"}`);
   }
 
   const safe = Math.max(0, Math.min(100, Math.round(project.progress || 0)));
@@ -783,7 +819,7 @@ export default function Home() {
               </div>
               <TextField label="Approval" value={draftProject.approval} onChange={(v) => setDraftProject((p) => ({ ...p, approval: v }))} rows={1} />
               <TextField label="Risks (one per line)" value={draftProject.risks.join("\n")} onChange={(v) => updateDraftArrayField("risks", v)} rows={4} />
-              <TextField label="Decisions (one per line)" value={draftProject.decisions.join("\n")} onChange={(v) => updateDraftArrayField("decisions", v)} rows={4} />
+              <TextField label="Decisions (one per line)" value={draftProject.decisions.map(d => d.text).join("\n")} onChange={(v) => updateDraftArrayField("decisions", v)} rows={4} />
             </div>
           ) : (
             <div className="space-y-3">
@@ -839,7 +875,7 @@ export default function Home() {
           title="Decisions"
           summary={project.decisions.length ? `${project.decisions.length} recorded` : "None yet"}
         >
-          <SidebarList items={project.decisions} state={fieldStates.decisions} emptyText="No decisions recorded yet." />
+          <DecisionList decisions={project.decisions} emptyText="No decisions recorded yet." />
         </CollapsibleSection>
 
         {/* FLAGGED — user-flagged text excerpts. Added v1.14.3. */}
@@ -1003,15 +1039,28 @@ export default function Home() {
                   {m.role === "assistant" ? "Jarvis" : "You"}
                 </span>
                 {m.timestamp && <MessageTimestamp iso={m.timestamp} />}
-                {/* Copy button — Jarvis messages only, appears on hover */}
+                {/* Copy button and Promote to Decision — Jarvis messages only */}
                 {m.role === "assistant" && (
-                  <button
-                    onClick={() => navigator.clipboard.writeText(m.content)}
-                    className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-gray-300 hover:text-gray-500 px-1.5 py-0.5 rounded border border-transparent hover:border-gray-200"
-                    title="Copy response"
-                  >
-                    copy
-                  </button>
+                  <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => navigator.clipboard.writeText(m.content)}
+                      className="text-[10px] text-gray-300 hover:text-gray-500 px-1.5 py-0.5 rounded border border-transparent hover:border-gray-200"
+                      title="Copy response"
+                    >
+                      copy
+                    </button>
+                    <button
+                      onClick={() => {
+                        const selection = window.getSelection()?.toString().trim();
+                        const textToPromote = selection && selection.length > 10 ? selection : m.content.slice(0, 120);
+                        promoteToDecision(textToPromote);
+                      }}
+                      className="text-[10px] text-gray-300 hover:text-gray-600 px-1.5 py-0.5 rounded border border-transparent hover:border-gray-200"
+                      title="Promote to Decision — select text first, or promotes first line"
+                    >
+                      → decision
+                    </button>
+                  </div>
                 )}
               </div>
               {/* Attachment previews */}

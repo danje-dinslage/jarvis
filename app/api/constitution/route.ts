@@ -29,7 +29,7 @@ Current project state:
 Mission: ${project.mission || "Not initialized"}
 Status: ${project.status || "Unknown"}
 Risks: ${project.risks.length ? project.risks.join(", ") : "None identified"}
-Decisions: ${project.decisions.length ? project.decisions.join(", ") : "None recorded"}
+Decisions: ${project.decisions.length ? project.decisions.map(d => d.text).join(", ") : "None recorded"}
 Progress: ${project.progress}%
 Confidence: ${project.confidence}
 ${persistedGovernance}

@@ -1,3 +1,16 @@
+// Decision — rich decision object. Added v1.15.
+// Backwards compatible: decisions field migrates from string[] to Decision[].
+export type Decision = {
+  id: string;
+  text: string;
+  alternatives?: string;   // what else was considered
+  reasoning?: string;      // why this was chosen
+  confidence: "high" | "medium" | "low";
+  createdAt: string;
+  updatedAt?: string;
+  source: "user" | "jarvis" | "promoted";
+};
+
 export type ProjectState = {
   mission: string;
   status: string;
@@ -6,7 +19,7 @@ export type ProjectState = {
   nextAction: string;
   progress: number;
   risks: string[];
-  decisions: string[];
+  decisions: Decision[];   // upgraded from string[] in v1.15
   // Project Clock — added v1.3
   createdAt: string;
   updatedAt: string;
@@ -42,7 +55,7 @@ export const defaultProjectState: ProjectState = {
   // Governance profile — added v1.12
   projectType: "",
   governanceRiskLevel: "",
-  riskDomains: [],        // added v1.14
+  riskDomains: [],
   // Evidence annotations — added v1.12
   riskEvidence: [],
   decisionEvidence: []
@@ -65,7 +78,13 @@ Progress: ${Number.isFinite(project.progress) ? project.progress : 0}%
 Risks:
 ${project.risks.length ? project.risks.map((r) => `- ${r}`).join("\n") : "- None identified yet"}
 Decisions:
-${project.decisions.length ? project.decisions.map((d) => `- ${d}`).join("\n") : "- None recorded yet"}
+${project.decisions.length ? project.decisions.map((d) => {
+  const parts = [`- ${d.text}`];
+  if (d.reasoning) parts.push(`  Reasoning: ${d.reasoning}`);
+  if (d.alternatives) parts.push(`  Alternatives considered: ${d.alternatives}`);
+  parts.push(`  Confidence: ${d.confidence} | Source: ${d.source}`);
+  return parts.join("\n");
+}).join("\n") : "- None recorded yet"}
 Project clock:
 Created: ${project.createdAt || "Unknown"}
 Last updated: ${project.updatedAt || "Unknown"}
@@ -239,6 +258,7 @@ Timestamp rules:
 - Evidence: riskEvidence must be the same length as risks. For each risk, classify evidence as: "verified" (confirmed by external data or user testing), "user_reported" (user stated it), "inferred" (Jarvis deduced it), "assumption" (unverified belief), or "" (unknown).
 - Evidence: decisionEvidence must be the same length as decisions. Same classification.
 - Never leave riskEvidence or decisionEvidence shorter than their corresponding arrays.
+- Decision objects: preserve existing decisions with their original id and createdAt. For new decisions, generate an id as a timestamp string (e.g. "1717200000000"), set source to "jarvis" if Jarvis recommended it or "user" if the user stated it. Populate reasoning and alternatives when they are evident from the conversation. Set confidence based on how certain the decision appears. Maximum 5 decisions total.
 
 Use calibrated trust:
 - User statements may update state as user-reported information.
@@ -271,7 +291,18 @@ Return ONLY valid JSON with exactly this shape:
   "nextAction": "string",
   "progress": 0,
   "risks": ["string"],
-  "decisions": ["string"],
+  "decisions": [
+    {
+      "id": "string (preserve existing id, or generate new one as timestamp string)",
+      "text": "string (the decision)",
+      "alternatives": "string or omit if unknown",
+      "reasoning": "string or omit if unknown",
+      "confidence": "high|medium|low",
+      "createdAt": "ISO timestamp (preserve existing, or use current timestamp for new decisions)",
+      "updatedAt": "ISO timestamp or omit if not updated",
+      "source": "user|jarvis|promoted"
+    }
+  ],
   "createdAt": "string",
   "updatedAt": "string",
   "lastRiskUpdate": "string",
@@ -295,10 +326,43 @@ export function normalizeProjectState(input: any, fallback: ProjectState): Proje
       .slice(0, 5);
   };
 
+  // normalizeDecisions — migrates string[] or Decision[] to Decision[]. Added v1.15.
+  const normalizeDecisions = (value: unknown, fallbackValue: Decision[]): Decision[] => {
+    if (!Array.isArray(value)) return fallbackValue;
+    return value.slice(0, 5).map((item: any, i: number): Decision | null => {
+      if (!item) return null;
+      // Legacy string format — wrap in minimal Decision object
+      if (typeof item === "string") {
+        return {
+          id: `legacy-${i}`,
+          text: item.trim(),
+          confidence: "medium",
+          createdAt: fallback.lastDecisionUpdate || fallback.createdAt || "",
+          source: "user"
+        };
+      }
+      // Already a Decision object — validate and normalize
+      if (typeof item === "object" && typeof item.text === "string" && item.text.trim()) {
+        const validConfidence = ["high", "medium", "low"];
+        const validSource = ["user", "jarvis", "promoted"];
+        return {
+          id: typeof item.id === "string" && item.id ? item.id : `dec-${Date.now()}-${i}`,
+          text: item.text.trim(),
+          alternatives: typeof item.alternatives === "string" && item.alternatives.trim() ? item.alternatives.trim() : undefined,
+          reasoning: typeof item.reasoning === "string" && item.reasoning.trim() ? item.reasoning.trim() : undefined,
+          confidence: validConfidence.includes(item.confidence) ? item.confidence : "medium",
+          createdAt: typeof item.createdAt === "string" && item.createdAt ? item.createdAt : new Date().toISOString(),
+          updatedAt: typeof item.updatedAt === "string" && item.updatedAt ? item.updatedAt : undefined,
+          source: validSource.includes(item.source) ? item.source : "jarvis"
+        };
+      }
+      return null;
+    }).filter((d): d is Decision => d !== null);
+  };
+
   const cleanEvidenceArray = (value: unknown, risks: string[]) => {
     if (!Array.isArray(value)) return risks.map(() => "");
     const arr = value.map((item) => String(item || "").trim());
-    // Pad or trim to match risks length
     while (arr.length < risks.length) arr.push("");
     return arr.slice(0, risks.length);
   };
@@ -313,7 +377,7 @@ export function normalizeProjectState(input: any, fallback: ProjectState): Proje
     : fallback.governanceRiskLevel;
 
   const risks = cleanArray(input?.risks, fallback.risks);
-  const decisions = cleanArray(input?.decisions, fallback.decisions);
+  const decisions = normalizeDecisions(input?.decisions, fallback.decisions);
 
   return {
     mission: cleanString(input?.mission, fallback.mission),
@@ -331,14 +395,14 @@ export function normalizeProjectState(input: any, fallback: ProjectState): Proje
     lastDecisionUpdate: cleanString(input?.lastDecisionUpdate, fallback.lastDecisionUpdate),
     lastOrientationAt: cleanString(input?.lastOrientationAt, fallback.lastOrientationAt),
     orientationCount: typeof input?.orientationCount === "number" && Number.isFinite(input.orientationCount) ? Math.max(0, Math.round(input.orientationCount)) : fallback.orientationCount,
-    // Governance profile — added v1.12. Preserve existing value if new one empty.
+    // Governance profile
     projectType: cleanString(input?.projectType, fallback.projectType),
     governanceRiskLevel: governanceRiskLevel || fallback.governanceRiskLevel,
     riskDomains: Array.isArray(input?.riskDomains)
       ? input.riskDomains.map((d: unknown) => String(d || "").trim()).filter(Boolean)
       : fallback.riskDomains,
-    // Evidence annotations — added v1.12
+    // Evidence annotations
     riskEvidence: cleanEvidenceArray(input?.riskEvidence, risks),
-    decisionEvidence: cleanEvidenceArray(input?.decisionEvidence, decisions)
+    decisionEvidence: cleanEvidenceArray(input?.decisionEvidence, decisions.map(d => d.text))
   };
 }

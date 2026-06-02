@@ -157,7 +157,7 @@ async function semanticMemoryCheck(
 Project mission: ${project.mission}
 
 Recorded decisions:
-${project.decisions.length ? project.decisions.map((d, i) => `${i + 1}. ${d}`).join("\n") : "None"}
+${project.decisions.length ? project.decisions.map((d, i) => `${i + 1}. ${d.text}${d.reasoning ? ` (reasoning: ${d.reasoning})` : ""}`).join("\n") : "None"}
 
 Tracked risks:
 ${project.risks.length ? project.risks.map((r, i) => `${i + 1}. ${r}`).join("\n") : "None"}
