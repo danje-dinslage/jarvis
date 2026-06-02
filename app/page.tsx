@@ -420,7 +420,7 @@ export default function Home() {
       });
       const data = await response.json();
       if (data.orientation) {
-        setHistory((h) => [...h, { role: "assistant", content: data.orientation, timestamp: new Date().toISOString() }]);
+        setHistory((h) => [...h, { id: `msg-${Date.now()}`, role: "assistant", content: data.orientation, timestamp: new Date().toISOString() }]);
         setProject((p) => ({ ...p, orientationCount: p.orientationCount + 1, lastOrientationAt: new Date().toISOString() }));
       }
     } catch {
