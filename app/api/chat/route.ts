@@ -255,18 +255,22 @@ function calculateMemoryAge(source: string, lastDecisionUpdate: string, lastRisk
 }
 
 // classifySearchIntent — determines if and why web search is needed.
-// Returns "none" if memory answers it or search won't help. Added v1.11.
+// Returns "none" if memory answers it or search won't help. Updated v1.14.4.
+// Fix: no longer requires project.mission — search is valid even on uninitialized projects.
 async function classifySearchIntent(
   message: string,
   project: ProjectState,
   memoryHit: boolean
 ): Promise<SearchIntent> {
   if (memoryHit) return "none";
-  if (!project.mission) return "none";
+
+  const missionContext = project.mission
+    ? `Project mission: ${project.mission}`
+    : "No project mission set yet.";
 
   const prompt = `You are a search intent classifier for a project navigation AI.
 
-Project mission: ${project.mission}
+${missionContext}
 User message: "${message}"
 
 Classify whether web search would meaningfully help answer this message.
@@ -285,6 +289,7 @@ Rules:
 - Questions about specific named companies, tools, or technologies → usually "competitor" or "technical"
 - Questions about market facts or statistics → "market" or "validation"
 - Personal or emotional questions → "none"
+- Questions about competitors, alternatives, or industry players → "competitor"
 
 Return only the single word value. Nothing else.`;
 
@@ -448,13 +453,15 @@ export async function POST(req: NextRequest) {
     const memoryNote = buildMemoryNote(memoryRetrieval);
     if (memoryNote) systemPrompt += memoryNote;
 
-    // Add search context if web search enabled — scope queries to project mission
-    if (enableSearch && project.mission) {
+    // Add search context if web search enabled
+    if (enableSearch) {
+      const missionLine = project.mission
+        ? `Project mission: ${project.mission}\n`
+        : "";
       systemPrompt += `\n\n--- SEARCH CONTEXT ---
-When performing web searches, scope your queries to the project context.
-Project mission: ${project.mission}
-Search intent: ${searchIntent}
-Always frame searches around the specific project context, not generic queries.
+When performing web searches, be specific and current.
+${missionLine}Search intent: ${searchIntent}
+${project.mission ? "Frame searches around the specific project context, not generic queries." : "Answer the question directly from search results."}
 After searching, label any facts found as externally verified in your response.
 --- END SEARCH CONTEXT ---`;
     }
