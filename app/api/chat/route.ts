@@ -451,7 +451,7 @@ After searching, label any facts found as externally verified in your response.
     ];
 
     // LAYER 3: Agentic Claude loop with optional web search
-    const { reply, searchUsed } = await callAnthropicAgentLoop(jarvisMessages, systemPrompt, 1000, enableSearch);
+    const { reply, searchUsed } = await callAnthropicAgentLoop(jarvisMessages, systemPrompt, 4000, enableSearch);
 
     // State update — note search usage and persist governance profile
     let updatedProject = project;
