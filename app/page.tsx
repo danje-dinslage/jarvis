@@ -919,15 +919,16 @@ export default function Home() {
                 reason={constitutionAnalysis.reasoning}
               />
             )}
-            {/* Search indicator — shown briefly after search was used */}
-            {searchUsed && searchIntent && searchIntent !== "none" && (
-              <span
-                className="text-[9px] font-semibold uppercase tracking-widest text-gray-400"
-                title={`Web search used · intent: ${searchIntent}`}
+            {/* Search indicator — visible pill shown while searching or after search fired */}
+            {(loading && searchIntent && searchIntent !== "none") || (searchUsed && searchIntent && searchIntent !== "none") ? (
+              <div
+                className={`flex items-center gap-1.5 rounded border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider ${loading ? "border-blue-200 bg-blue-50 text-blue-500" : "border-gray-200 bg-gray-50 text-gray-500"}`}
+                title={`Web search · ${searchIntent}`}
               >
-                ⌕ {searchIntent}
-              </span>
-            )}
+                <span className={loading ? "animate-pulse" : ""}>⌕</span>
+                <span>{loading ? "searching..." : `web · ${searchIntent}`}</span>
+              </div>
+            ) : null}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setConfirmAction("clearChat")}

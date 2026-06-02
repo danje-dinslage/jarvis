@@ -64,62 +64,34 @@ async function callAnthropic(messages: any[], system: string, maxTokens = 900): 
   return text;
 }
 
-// callAnthropicAgentLoop — agentic loop supporting web search tool use. Fixed v1.14.4.
-// Bug fix: b.name === "web_search" (was b.type === "web_search" — always false).
-// Web search results are now returned correctly in tool_result blocks.
+// callAnthropicAgentLoop — calls Claude with optional web search. Updated v1.14.4.
+// web_search_20250305 is a SERVER tool — Anthropic executes it internally.
+// No tool_use/tool_result cycle needed. One call returns the final response with citations.
 async function callAnthropicAgentLoop(
   messages: any[],
   system: string,
   maxTokens = 1000,
   enableSearch: boolean
 ): Promise<{ reply: string; searchUsed: boolean }> {
-  const tools = enableSearch ? [{ type: "web_search_20250305", name: "web_search" }] : [];
-  let currentMessages = [...messages];
-  let searchUsed = false;
-  const MAX_ITERATIONS = 5;
+  const tools = enableSearch ? [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] : [];
 
-  for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const data = await callAnthropicRaw(currentMessages, system, maxTokens, tools);
-    const content: any[] = data.content || [];
-    const stopReason: string = data.stop_reason || "end_turn";
+  const data = await callAnthropicRaw(messages, system, maxTokens, tools);
+  const content: any[] = data.content || [];
 
-    // Check if search was used this iteration
-    if (content.some((b: any) => b.type === "tool_use" && b.name === "web_search")) {
-      searchUsed = true;
-    }
+  // Check if search was used — server tool results appear as tool_result blocks in content
+  const searchUsed = content.some((b: any) =>
+    b.type === "tool_use" && b.name === "web_search" ||
+    b.type === "tool_result" ||
+    b.type === "web_search_tool_result"
+  );
 
-    // If done, extract text and return
-    if (stopReason === "end_turn") {
-      const text = content.find((b: any) => b.type === "text")?.text || "";
-      return { reply: text, searchUsed };
-    }
+  // Extract text response
+  const text = content
+    .filter((b: any) => b.type === "text")
+    .map((b: any) => b.text)
+    .join("") || "";
 
-    // If tool use, append assistant turn and tool results, continue loop
-    if (stopReason === "tool_use") {
-      currentMessages = [...currentMessages, { role: "assistant", content }];
-
-      // Build tool results — fixed: check b.name not b.type
-      const toolResults = content
-        .filter((b: any) => b.type === "tool_use")
-        .map((b: any) => ({
-          type: "tool_result",
-          tool_use_id: b.id,
-          content: b.name === "web_search" ? "Search completed." : "Tool completed."
-        }));
-
-      currentMessages = [...currentMessages, { role: "user", content: toolResults }];
-      continue;
-    }
-
-    // Any other stop reason — extract text if available and exit
-    const text = content.find((b: any) => b.type === "text")?.text || "";
-    return { reply: text, searchUsed };
-  }
-
-  // Max iterations reached — extract whatever text we have
-  const data = await callAnthropicRaw(currentMessages, system, maxTokens, []);
-  const text = data.content?.find((b: any) => b.type === "text")?.text || "I was unable to complete this request.";
-  return { reply: text, searchUsed };
+  return { reply: text, searchUsed: searchUsed || enableSearch };
 }
 
 function parseJsonObject(text: string) {
