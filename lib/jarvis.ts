@@ -1,3 +1,11 @@
+// AlignmentEntry — one data point in mission alignment history. Added v1.16.
+export type AlignmentEntry = {
+  score: number;                          // attentionScore 0–100
+  alignment: "high" | "medium" | "low";  // missionAlignment from constitution
+  timestamp: string;                      // ISO
+  turn: number;                           // conversation turn index
+};
+
 // Decision — rich decision object. Added v1.15.
 // Backwards compatible: decisions field migrates from string[] to Decision[].
 export type Decision = {
@@ -34,6 +42,8 @@ export type ProjectState = {
   // Evidence annotations — added v1.12 (optional per-item evidence level)
   riskEvidence: string[];     // parallel to risks[], "" means unknown
   decisionEvidence: string[]; // parallel to decisions[], "" means unknown
+  // Mission alignment history — added v1.16 (last 20 entries, feeds drift detection)
+  alignmentHistory: AlignmentEntry[];
 };
 
 export const defaultProjectState: ProjectState = {
@@ -58,7 +68,9 @@ export const defaultProjectState: ProjectState = {
   riskDomains: [],
   // Evidence annotations — added v1.12
   riskEvidence: [],
-  decisionEvidence: []
+  decisionEvidence: [],
+  // Mission alignment history — added v1.16
+  alignmentHistory: []
 };
 
 export function buildJarvisSystemPrompt(project: ProjectState) {
@@ -403,6 +415,35 @@ export function normalizeProjectState(input: any, fallback: ProjectState): Proje
       : fallback.riskDomains,
     // Evidence annotations
     riskEvidence: cleanEvidenceArray(input?.riskEvidence, risks),
-    decisionEvidence: cleanEvidenceArray(input?.decisionEvidence, decisions.map(d => d.text))
+    decisionEvidence: cleanEvidenceArray(input?.decisionEvidence, decisions.map(d => d.text)),
+    // Mission alignment history — added v1.16
+    alignmentHistory: Array.isArray(input?.alignmentHistory)
+      ? input.alignmentHistory.slice(-20).filter((e: any) =>
+          typeof e?.score === "number" && typeof e?.alignment === "string" && typeof e?.timestamp === "string"
+        )
+      : (fallback.alignmentHistory || [])
   };
+}
+
+// computeAlignmentTrend — derives trend from last 5 alignment history entries. Added v1.16.
+export type AlignmentTrend = "stable" | "drifting" | "recovering" | "critical" | "insufficient_data";
+
+export function computeAlignmentTrend(history: AlignmentEntry[]): AlignmentTrend {
+  if (history.length < 3) return "insufficient_data";
+  const recent = history.slice(-5);
+  const avg = recent.reduce((s, e) => s + e.score, 0) / recent.length;
+  const latest = recent[recent.length - 1].score;
+  const earliest = recent[0].score;
+  const delta = latest - earliest;
+
+  if (avg >= 70) return "critical";
+  if (delta >= 15) return "drifting";    // trending worse
+  if (delta <= -15) return "recovering"; // trending better
+  return "stable";
+}
+
+export function computeAlignmentAverage(history: AlignmentEntry[]): number | null {
+  if (history.length < 1) return null;
+  const recent = history.slice(-5);
+  return Math.round(recent.reduce((s, e) => s + e.score, 0) / recent.length);
 }

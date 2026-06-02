@@ -38,16 +38,12 @@ async function callAnthropicRaw(messages: any[], system: string, maxTokens = 900
   if (tools?.length) body.tools = tools;
 
   const hasWebSearch = tools?.some(t => t.name === "web_search");
-  const hasWebFetch = tools?.some(t => t.name === "web_fetch");
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "x-api-key": apiKey(),
     "anthropic-version": "2023-06-01"
   };
-  const betaHeaders: string[] = [];
-  if (hasWebSearch) betaHeaders.push("web-search-2025-03-05");
-  if (hasWebFetch) betaHeaders.push("web-fetch-2025-01-24");
-  if (betaHeaders.length) headers["anthropic-beta"] = betaHeaders.join(",");
+  if (hasWebSearch) headers["anthropic-beta"] = "web-search-2025-03-05";
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -68,9 +64,9 @@ async function callAnthropic(messages: any[], system: string, maxTokens = 900): 
   return text;
 }
 
-// callAnthropicAgentLoop — calls Claude with optional web search and web fetch. Updated v1.14.4.
-// Both web_search_20250305 and web_fetch_20250124 are SERVER tools — Anthropic executes them.
-// No tool_use/tool_result cycle needed. One call returns the final response with citations.
+// callAnthropicAgentLoop — calls Claude with optional web search. Updated v1.16.
+// web_search_20250305 is a SERVER tool — Anthropic executes it internally.
+// web_fetch removed — correct tool version needs separate verification.
 async function callAnthropicAgentLoop(
   messages: any[],
   system: string,
@@ -78,16 +74,15 @@ async function callAnthropicAgentLoop(
   enableSearch: boolean
 ): Promise<{ reply: string; searchUsed: boolean }> {
   const tools = enableSearch ? [
-    { type: "web_search_20250305", name: "web_search", max_uses: 5 },
-    { type: "web_fetch_20250124", name: "web_fetch", max_uses: 3 }
+    { type: "web_search_20250305", name: "web_search", max_uses: 5 }
   ] : [];
 
   const data = await callAnthropicRaw(messages, system, maxTokens, tools);
   const content: any[] = data.content || [];
 
-  // Server tools return results directly — check for tool usage in content blocks
+  // Server tools return results directly — check for search tool usage in content blocks
   const searchUsed = enableSearch && content.some((b: any) =>
-    (b.type === "tool_use" && (b.name === "web_search" || b.name === "web_fetch")) ||
+    (b.type === "tool_use" && b.name === "web_search") ||
     b.type === "tool_result" ||
     b.type === "web_search_tool_result"
   );
@@ -490,6 +485,19 @@ After searching, label any facts found as externally verified in your response.
           gu.riskDomains.forEach((d: string) => existing.add(d));
           updatedProject = { ...updatedProject, riskDomains: Array.from(existing) };
         }
+      }
+
+      // Append to alignmentHistory if constitution analysis ran. Added v1.16.
+      // Keep last 20 entries. Only record when mission exists.
+      if (constitutionAnalysis && updatedProject.mission) {
+        const entry = {
+          score: constitutionAnalysis.attentionScore,
+          alignment: constitutionAnalysis.missionAlignment,
+          timestamp: now,
+          turn: (updatedProject.alignmentHistory?.length || 0) + 1
+        };
+        const history = [...(updatedProject.alignmentHistory || []), entry].slice(-20);
+        updatedProject = { ...updatedProject, alignmentHistory: history };
       }
     } catch {
       updatedProject = project;

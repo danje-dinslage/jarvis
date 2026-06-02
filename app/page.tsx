@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Download, Edit3, Paperclip, RefreshCcw, Save, Send, Upload, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { defaultProjectState, normalizeProjectState, type Decision, type ProjectState } from "@/lib/jarvis";
+import { computeAlignmentAverage, computeAlignmentTrend, defaultProjectState, normalizeProjectState, type AlignmentEntry, type AlignmentTrend, type Decision, type ProjectState } from "@/lib/jarvis";
 
 // Attachment — file attached to a user message. Added v1.9.
 type Attachment = {
@@ -21,7 +21,7 @@ type Message = {
   attachments?: Attachment[];
 };
 
-const APP_VERSION = "v1.15";
+const APP_VERSION = "v1.16";
 
 // Flag — user-flagged text excerpt from any message. Added v1.14.3.
 type Flag = {
@@ -246,9 +246,14 @@ function MessageTimestamp({ iso }: { iso: string }) {
   );
 }
 
-// NavigatorAttentionMeter — analogue VU-style needle meter. Updated v1.14.3.
-// Added "Navigator Attention" label and richer hover tooltip.
-function NavigatorAttentionMeter({ score, reason }: { score: number; reason: string }) {
+// NavigatorAttentionMeter — analogue VU-style needle meter. Updated v1.16.
+// Now accepts trend and average for the small indicator below the label.
+function NavigatorAttentionMeter({ score, reason, trend, average }: {
+  score: number;
+  reason: string;
+  trend?: AlignmentTrend;
+  average?: number | null;
+}) {
   const angle = -45 + (score / 100) * 90;
   const rad = (angle * Math.PI) / 180;
   const cx = 44;
@@ -256,60 +261,47 @@ function NavigatorAttentionMeter({ score, reason }: { score: number; reason: str
   const needleLen = 32;
   const nx = cx + needleLen * Math.sin(rad);
   const ny = cy - needleLen * Math.cos(rad);
-  const isHigh = score >= 65;
-  const isMed = score >= 35 && score < 65;
 
-  const tooltipText = `Navigator Attention — constitutional engagement level.\nHow actively Jarvis is applying governance to this conversation.${reason ? `\n\n${reason}` : ""}`;
+  const tooltipText = `Navigator Attention — constitutional engagement level.\nHow actively Jarvis is applying governance to this conversation.${reason ? `\n\n${reason}` : ""}${average != null ? `\n\n5-turn average: ${average}` : ""}`;
+
+  const trendLabel: Record<string, string> = {
+    stable: "↔ stable",
+    drifting: "↗ drifting",
+    recovering: "↘ recovering",
+    critical: "⚠ critical",
+    insufficient_data: ""
+  };
+  const trendColor: Record<string, string> = {
+    stable: "text-gray-400",
+    drifting: "text-amber-500",
+    recovering: "text-green-500",
+    critical: "text-red-500",
+    insufficient_data: "text-gray-300"
+  };
 
   return (
     <div className="flex flex-col items-center gap-0.5" title={tooltipText}>
-      <svg
-        width="88"
-        height="58"
-        viewBox="0 0 88 58"
-        xmlns="http://www.w3.org/2000/svg"
-        style={{ overflow: "visible" }}
-      >
-        {/* Face */}
-        <rect x="1" y="1" width="86" height="56" rx="3" ry="3"
-          fill="#f5f0e8" stroke="#888" strokeWidth="1.2" />
-
-        {/* Arc track */}
-        <path d="M 14 52 A 30 30 0 0 1 74 52"
-          fill="none" stroke="#ddd" strokeWidth="2.5" strokeLinecap="round" />
-
-        {/* Red zone arc */}
-        <path d="M 62 28 A 30 30 0 0 1 74 52"
-          fill="none" stroke="#c0392b" strokeWidth="2.5" strokeLinecap="round" opacity="0.7" />
-
-        {/* Tick marks */}
+      <svg width="88" height="58" viewBox="0 0 88 58" xmlns="http://www.w3.org/2000/svg" style={{ overflow: "visible" }}>
+        <rect x="1" y="1" width="86" height="56" rx="3" ry="3" fill="#f5f0e8" stroke="#888" strokeWidth="1.2" />
+        <path d="M 14 52 A 30 30 0 0 1 74 52" fill="none" stroke="#ddd" strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M 62 28 A 30 30 0 0 1 74 52" fill="none" stroke="#c0392b" strokeWidth="2.5" strokeLinecap="round" opacity="0.7" />
         {[-45, -22, 0, 22, 45].map((a, i) => {
           const r = (a * Math.PI) / 180;
-          const x1 = cx + 27 * Math.sin(r);
-          const y1 = cy - 27 * Math.cos(r);
-          const x2 = cx + 31 * Math.sin(r);
-          const y2 = cy - 31 * Math.cos(r);
-          return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
-            stroke={i >= 3 ? "#c0392b" : "#999"} strokeWidth={i === 2 ? 1.5 : 1} />;
+          const x1 = cx + 27 * Math.sin(r); const y1 = cy - 27 * Math.cos(r);
+          const x2 = cx + 31 * Math.sin(r); const y2 = cy - 31 * Math.cos(r);
+          return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={i >= 3 ? "#c0392b" : "#999"} strokeWidth={i === 2 ? 1.5 : 1} />;
         })}
-
-        {/* Needle */}
-        <line x1={cx} y1={cy} x2={nx} y2={ny}
-          stroke="#1a1a1a" strokeWidth="1.5" strokeLinecap="round"
-          style={{ transition: "x2 0.6s cubic-bezier(0.34,1.56,0.64,1), y2 0.6s cubic-bezier(0.34,1.56,0.64,1)" }}
-        />
-
-        {/* Pivot dot */}
+        <line x1={cx} y1={cy} x2={nx} y2={ny} stroke="#1a1a1a" strokeWidth="1.5" strokeLinecap="round"
+          style={{ transition: "x2 0.6s cubic-bezier(0.34,1.56,0.64,1), y2 0.6s cubic-bezier(0.34,1.56,0.64,1)" }} />
         <circle cx={cx} cy={cy} r="2.5" fill="#444" />
-
-        {/* ATTN label */}
-        <text x="44" y="56" textAnchor="middle" fontSize="6" fill="#888"
-          fontFamily="monospace" letterSpacing="1.5">ATTN</text>
+        <text x="44" y="56" textAnchor="middle" fontSize="6" fill="#888" fontFamily="monospace" letterSpacing="1.5">ATTN</text>
       </svg>
-      {/* Navigator Attention label — always visible */}
-      <span className="text-[9px] font-medium tracking-wide text-gray-400" style={{ fontFamily: "monospace" }}>
-        Navigator Attention
-      </span>
+      <span className="text-[9px] font-medium tracking-wide text-gray-400" style={{ fontFamily: "monospace" }}>Navigator Attention</span>
+      {trend && trend !== "insufficient_data" && (
+        <span className={`text-[9px] font-medium ${trendColor[trend] || "text-gray-400"}`} style={{ fontFamily: "monospace" }}>
+          {trendLabel[trend]}
+        </span>
+      )}
     </div>
   );
 }
@@ -985,6 +977,8 @@ export default function Home() {
               <NavigatorAttentionMeter
                 score={constitutionAnalysis.attentionScore}
                 reason={constitutionAnalysis.reasoning}
+                trend={computeAlignmentTrend(project.alignmentHistory || [])}
+                average={computeAlignmentAverage(project.alignmentHistory || [])}
               />
             )}
             {/* Search indicator — visible pill shown while searching or after search fired */}

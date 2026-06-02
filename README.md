@@ -1,4 +1,4 @@
-# Jarvis v1.15
+# Jarvis v1.16
 
 Browser-based Jarvis prototype with file-based continuity.
 
