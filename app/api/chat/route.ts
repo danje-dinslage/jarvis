@@ -38,12 +38,16 @@ async function callAnthropicRaw(messages: any[], system: string, maxTokens = 900
   if (tools?.length) body.tools = tools;
 
   const hasWebSearch = tools?.some(t => t.name === "web_search");
+  const hasWebFetch = tools?.some(t => t.name === "web_fetch");
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "x-api-key": apiKey(),
     "anthropic-version": "2023-06-01"
   };
-  if (hasWebSearch) headers["anthropic-beta"] = "web-search-2025-03-05";
+  const betaHeaders: string[] = [];
+  if (hasWebSearch) betaHeaders.push("web-search-2025-03-05");
+  if (hasWebFetch) betaHeaders.push("web-fetch-2025-01-24");
+  if (betaHeaders.length) headers["anthropic-beta"] = betaHeaders.join(",");
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -64,8 +68,8 @@ async function callAnthropic(messages: any[], system: string, maxTokens = 900): 
   return text;
 }
 
-// callAnthropicAgentLoop — calls Claude with optional web search. Updated v1.14.4.
-// web_search_20250305 is a SERVER tool — Anthropic executes it internally.
+// callAnthropicAgentLoop — calls Claude with optional web search and web fetch. Updated v1.14.4.
+// Both web_search_20250305 and web_fetch_20250124 are SERVER tools — Anthropic executes them.
 // No tool_use/tool_result cycle needed. One call returns the final response with citations.
 async function callAnthropicAgentLoop(
   messages: any[],
@@ -73,19 +77,22 @@ async function callAnthropicAgentLoop(
   maxTokens = 1000,
   enableSearch: boolean
 ): Promise<{ reply: string; searchUsed: boolean }> {
-  const tools = enableSearch ? [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] : [];
+  const tools = enableSearch ? [
+    { type: "web_search_20250305", name: "web_search", max_uses: 5 },
+    { type: "web_fetch_20250124", name: "web_fetch", max_uses: 3 }
+  ] : [];
 
   const data = await callAnthropicRaw(messages, system, maxTokens, tools);
   const content: any[] = data.content || [];
 
-  // Check if search was used — server tool results appear as tool_result blocks in content
-  const searchUsed = content.some((b: any) =>
-    b.type === "tool_use" && b.name === "web_search" ||
+  // Server tools return results directly — check for tool usage in content blocks
+  const searchUsed = enableSearch && content.some((b: any) =>
+    (b.type === "tool_use" && (b.name === "web_search" || b.name === "web_fetch")) ||
     b.type === "tool_result" ||
     b.type === "web_search_tool_result"
   );
 
-  // Extract text response
+  // Extract all text blocks and join
   const text = content
     .filter((b: any) => b.type === "text")
     .map((b: any) => b.text)
@@ -235,6 +242,11 @@ async function classifySearchIntent(
   memoryHit: boolean
 ): Promise<SearchIntent> {
   if (memoryHit) return "none";
+
+  // URL fetch requests — always enable search/fetch tools
+  if (/https?:\/\/|go to .{3,50}\.com|visit .{3,50}\.com|open .{3,50}\.com|check .{3,50}\.com/.test(message.toLowerCase())) {
+    return "research";
+  }
 
   const missionContext = project.mission
     ? `Project mission: ${project.mission}`
